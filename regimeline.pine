@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v5.53 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v5.54 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -776,192 +776,121 @@ L1_markExit(_reason, _outcome, _regExit) =>
 posOpened = barstate.isconfirmed and (strategy.position_size != 0) and (strategy.position_size[1] == 0)
 posClosed = barstate.isconfirmed and (strategy.position_size == 0) and (strategy.position_size[1] != 0)
 
-// Accumulate realized PnL whenever TradingView closes any portion (partial or full)
+//====================================================
+// L1: TradingView Trade List 1:1 logging
+// Each strategy.closedtrades[] record == one row in Trade List
+// This includes partial closes (TP1) as separate rows.
+//====================================================
+
+// Tracks how many closedtrades records we have already emitted to logs
+var int L1_ctLogged = 0
+
 if exportToLogs and barstate.isconfirmed
     int ctNow = strategy.closedtrades
-    if ctNow > L1_ctPrev
-        // add profits for all newly closed trade records
-        for k = L1_ctPrev to ctNow - 1
-            L1_realizedPnlUsd += strategy.closedtrades.profit(k)
-        L1_ctPrev := ctNow
 
+    // Emit one CSV row per NEW closedtrades record (TP1 partials included)
+    if ctNow > L1_ctLogged
+        for k = L1_ctLogged to ctNow - 1
+            // --- Trade List primitives (source of truth) ---
+            int   eTime   = strategy.closedtrades.entry_time(k)
+            int   xTime   = strategy.closedtrades.exit_time(k)
+            int   eBar    = strategy.closedtrades.entry_bar_index(k)
+            int   xBar    = strategy.closedtrades.exit_bar_index(k)
+            float ePx     = strategy.closedtrades.entry_price(k)
+            float xPx     = strategy.closedtrades.exit_price(k)
+            float sz      = strategy.closedtrades.size(k)                 // signed (long +, short -)
+            float qtyAbs  = math.abs(sz)
+            float pnlUsd  = strategy.closedtrades.profit(k)
+            float tvPnlPct= strategy.closedtrades.profit_percent(k)
+            string dir    = sz >= 0 ? "LONG" : "SHORT"
 
-// On actual fill: commit entry snapshot + join keys
-if exportToLogs and posOpened
-    L1_tradeSeq += 1
-    L1_tradeId  += 1
+            // Exit reason: use the actual exit order id when available
+            // This is what lets TP1 appear as "TP1" (or whatever your exit id is)
+            string exitReason = strategy.closedtrades.exit_id(k)
 
-    L1_coin     := syminfo.ticker
-    L1_dir      := (strategy.position_size > 0) ? "LONG" : "SHORT"
-    L1_regEntry := (L1_pendReg != "" ? L1_pendReg : posTagToLogMode(posTag))
-    L1_arch     := (L1_pendArch != "" ? L1_pendArch : "UNKNOWN")
+            // Regime at exit: use current mode tagging at the bar the exit happens
+            // (for partial exits while still in position, this is correct "at time of exit")
+            string regExit = logModeNow()
 
-        // ---- NEW: commit mandatory entry diagnostics ----
-    L1_entryEngine := (L1_pendEntryEngine != "" ? L1_pendEntryEngine : "UNKNOWN")
-    L1_htfStateEnt := (L1_pendHtfState != "" ? L1_pendHtfState : "UNKNOWN")
-    L1_htfFlipEnt  := (L1_pendHtfFlipEvent != "" ? L1_pendHtfFlipEvent : "NONE")
-    L1_lastFlipEnt := (L1_pendLastFlipType != "" ? L1_pendLastFlipType : "NONE")
-    L1_acceptUpEnt := L1_pendAcceptUpCnt
-    L1_qualMaskEnt := L1_pendQualMask
+            // Bars in trade for THIS closed record
+            int barsInTrade = (not na(eBar) and not na(xBar)) ? (xBar - eBar) : na
 
-    // ---- NEW: commit numeric context ----
-    L1_modeEnt := (L1_pendMode != "" ? L1_pendMode : entryModeTag)
-    L1_modeScoreEnt := L1_pendModeScore
-    L1_adxEnt       := L1_pendAdx
-    L1_adxRisingEnt := L1_pendAdxRising
+            // MFE/MAE: for strict 1:1 Trade List parity, these can’t be reconstructed perfectly per partial
+            // unless you store per-trade excursion history by entry_bar_index.
+            // We keep your existing fields but output na here to avoid false data.
+            float mfePct = na
+            float maePct = na
 
-    L1_bodyPctEnt   := L1_pendBodyPct
-    L1_closeLocEnt  := L1_pendCloseLoc
-    L1_rngAtrEnt    := L1_pendRngAtr
+            // Trade Seq MUST match TradingView’s Trade List row ordering:
+            // closedtrades are 0..N-1, so +1 gives a clean 1-based sequence.
+            int tradeSeq = k + 1
 
-    L1_distBullATR  := L1_pendDistBullATR
-    L1_distEFATR    := L1_pendDistEFATR
-    L1_distESATR    := L1_pendDistESATR
+            log.info(
+                 L1_runId + "," + L1_tf + "," + L1_scriptVer + "," + str.tostring(tradeSeq) + "," +
+                 str.tostring(L1_tradeId) + "," +
+                 str.replace_all(syminfo.ticker, ",", ";") + "," + dir + "," +
 
-    L1_bsiEnt       := L1_pendBSI
-    L1_bsaEnt       := L1_pendBSA
-    L1_bsrEnt       := L1_pendBSR
+                 // Entry diagnostics (from your committed snapshot; same for TP1 + final exits)
+                 str.replace_all(L1_entryEngine, ",", ";") + "," +
+                 str.replace_all(L1_htfStateEnt, ",", ";") + "," +
+                 str.replace_all(L1_htfFlipEnt, ",", ";") + "," +
+                 str.replace_all(L1_lastFlipEnt, ",", ";") + "," +
+                 str.tostring(L1_acceptUpEnt) + "," +
+                 str.tostring(L1_qualMaskEnt) + "," +
 
-    // ---- reset per-trade monetization counters ----
-    L1_addCount  := 0
-    L1_tp1Hit    := false
-    L1_trailEver := false
+                 // Entry/Exit datetimes + ms
+                 fmtDT(eTime) + "," + fmtDT(xTime) + "," +
+                 str.tostring(eTime) + "," + str.tostring(xTime) + "," +
 
-    L1_entryTime := time
-    L1_entryBar  := bar_index
-    L1_entryPx   := strategy.position_avg_price
-    L1_entrySize := math.abs(strategy.position_size)
+                 // Entry/Exit bars
+                 str.tostring(eBar) + "," + str.tostring(xBar) + "," +
 
-    // reset max fav/adv trackers for this trade
-    L1_maxFavPx  := na
-    L1_maxFavBar := na
-    L1_maxAdvPx  := na
-    L1_maxAdvBar := na
+                 // Prices + size
+                 str.tostring(ePx) + "," + str.tostring(xPx) + "," + str.tostring(qtyAbs) + "," +
 
-    // clear any stale exit latch
-    L1_exitPending := false
-    L1_exitReason  := ""
-    L1_exitOutcome := na
+                 // PnL (USD + TradingView %)
+                 str.tostring(pnlUsd) + "," + str.tostring(tvPnlPct) + "," +
 
-    // reset partial aggregates (keep if you later wire them back in)
-    L1_nPartials         := 0
-    L1_partialPctSum     := 0.0
-    L1_firstPartialBar   := na
-    L1_firstPartialTime  := na
-    L1_lastPartialBar    := na
-    L1_lastPartialTime   := na
-    L1_partialReasons    := ""
+                 // Excursions (na here by design for strict parity)
+                 str.tostring(mfePct) + "," + str.tostring(maePct) + "," +
 
-    L1_realizedPnlUsd := 0.0
-    L1_ctPrev := strategy.closedtrades
+                 // Duration + exit reason + regimes
+                 str.tostring(barsInTrade) + "," +
+                 str.replace_all(exitReason, ",", ";") + "," +
+                 str.replace_all(L1_regEntry, ",", ";") + "," +
+                 str.replace_all(regExit, ",", ";") + "," +
 
+                 // Archetype + bars
+                 str.replace_all(L1_arch, ",", ";") + "," +
+                 str.tostring(L1_maxFavBar) + "," +
+                 str.tostring(L1_maxAdvBar) + "," +
 
-// On full close: compute metrics + emit exactly one row matching header
-if exportToLogs and posClosed
-    int   exitTimeMs   = time
-    int   exitBarIndex = bar_index
-    float exitPx       = close
-    float qtyAbs       = nz(L1_entrySize, math.abs(strategy.position_size[1]))
+                 // duplicates
+                 str.tostring(eBar) + "," + str.tostring(xBar) + "," +
 
-    // --- SOURCE OF TRUTH: TradingView realized PnL (already direction-correct) ---
-    float pnlUsd = L1_realizedPnlUsd
+                 // ENTRY CONTEXT SNAPSHOT
+                 str.replace_all(L1_modeEnt, ",", ";") + "," +
+                 str.tostring(L1_modeScoreEnt) + "," +
+                 str.tostring(L1_adxEnt) + "," +
+                 str.tostring(L1_adxRisingEnt) + "," +
+                 str.tostring(L1_bodyPctEnt) + "," +
+                 str.tostring(L1_closeLocEnt) + "," +
+                 str.tostring(L1_rngAtrEnt) + "," +
+                 str.tostring(L1_distBullATR) + "," +
+                 str.tostring(L1_distEFATR) + "," +
+                 str.tostring(L1_distESATR) + "," +
+                 str.tostring(L1_bsiEnt) + "," +
+                 str.tostring(L1_bsaEnt) + "," +
+                 str.tostring(L1_bsrEnt) + "," +
 
-    // --- TradingView PnL percent (direction + partials correct) ---
-    int ct = strategy.closedtrades - 1
-    float tvPnlPct = ct >= 0 ? strategy.closedtrades.profit_percent(ct) : na
+                 // Monetization/management flags (still meaningful)
+                 str.tostring(L1_tp1Hit) + "," +
+                 str.tostring(L1_trailEver) + "," +
+                 str.tostring(L1_addCount)
+            )
 
-
-    // --- Percent derived from USD (same sign guaranteed) ---
-    //float notionalUsd = L1_entryPx * qtyAbs * syminfo.pointvalue
-    //float pnlPct = notionalUsd != 0 ? (pnlUsd / notionalUsd) * 100.0 : na
-
-
-
-    float mfePct = L1_mfePct(L1_dir, L1_entryPx, L1_maxFavPx)
-    float maePct = L1_maePct(L1_dir, L1_entryPx, L1_maxAdvPx)
-
-    int barsInTrade = (not na(L1_entryBar)) ? (exitBarIndex - L1_entryBar) : na
-
-    // Exit regime: if you latched something, prefer it; else use current position tag context.
-    string regExit = (L1_regExit != "" ? L1_regExit : posTagToLogMode(posTag))
-
-    // Exit reason: if not latched by an explicit exit call, fall back to "CLOSE"
-    string exitReason = (L1_exitPending and L1_exitReason != "") ? L1_exitReason : "CLOSE"
-
-    log.info(
-    L1_runId + "," +
-    L1_tf + "," +
-    L1_scriptVer + "," +
-    str.tostring(L1_tradeSeq) + "," +
-
-    str.tostring(L1_tradeId) + "," +
-    str.replace_all(L1_coin, ",", ";") + "," +
-    L1_dir + "," +
-
-    str.replace_all(L1_entryEngine, ",", ";") + "," +
-    str.replace_all(L1_htfStateEnt, ",", ";") + "," +
-    str.replace_all(L1_htfFlipEnt, ",", ";") + "," +
-    str.replace_all(L1_lastFlipEnt, ",", ";") + "," +
-    str.tostring(L1_acceptUpEnt) + "," +
-    str.tostring(L1_qualMaskEnt) + "," +
-
-    fmtDT(L1_entryTime) + "," +
-    fmtDT(exitTimeMs) + "," +
-
-    str.tostring(L1_entryTime) + "," +
-    str.tostring(exitTimeMs) + "," +
-
-    str.tostring(L1_entryBar) + "," +
-    str.tostring(exitBarIndex) + "," +
-
-    str.tostring(L1_entryPx) + "," +
-    str.tostring(exitPx) + "," +
-    str.tostring(qtyAbs) + "," +
-
-    str.tostring(pnlUsd) + "," +
-    //str.tostring(pnlPct) + "," +
-    str.tostring(tvPnlPct) + "," +
-
-
-    str.tostring(mfePct) + "," +
-    str.tostring(maePct) + "," +
-
-    str.tostring(barsInTrade) + "," +
-
-    str.replace_all(exitReason, ",", ";") + "," +
-    str.replace_all(L1_regEntry, ",", ";") + "," +
-    str.replace_all(regExit, ",", ";") + "," +
-    str.replace_all(L1_arch, ",", ";") + "," +
-
-    str.tostring(L1_maxFavBar) + "," +
-    str.tostring(L1_maxAdvBar) + "," +
-
-    // duplicates (per your spec)
-    str.tostring(L1_entryBar) + "," +
-    str.tostring(exitBarIndex)
-    + "," + str.replace_all(L1_modeEnt, ",", ";") +
-    "," + str.tostring(L1_modeScoreEnt) +
-    "," + str.tostring(L1_adxEnt) +
-    "," + str.tostring(L1_adxRisingEnt) +
-    "," + str.tostring(L1_bodyPctEnt) +
-    "," + str.tostring(L1_closeLocEnt) +
-    "," + str.tostring(L1_rngAtrEnt) +
-    "," + str.tostring(L1_distBullATR) +
-    "," + str.tostring(L1_distEFATR) +
-    "," + str.tostring(L1_distESATR) +
-    "," + str.tostring(L1_bsiEnt) +
-    "," + str.tostring(L1_bsaEnt) +
-    "," + str.tostring(L1_bsrEnt) +
-    "," + str.tostring(L1_tp1Hit) +
-    "," + str.tostring(L1_trailEver) +
-    "," + str.tostring(L1_addCount)
-)
-
-
-    // after logging, clear latched exit info
-    L1_exitPending := false
-    L1_exitReason  := ""
-    L1_regExit     := ""
+        // Advance the emitted pointer
+        L1_ctLogged := ctNow
 
 
 //====================================================
