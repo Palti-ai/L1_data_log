@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v5.54 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v5.55 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -225,6 +225,9 @@ bullEndStyle   = input.string("LEFT","Bull END label style",   group=grpObs, opt
 //====================================================
 grpLogs="Logs"
 exportToLogs = input.bool(false, "Export to Logs", group=grpLogs)
+
+grpLog = "Logging"
+logTZ = input.string("Europe/Sofia", "Log timezone", group=grpLog)
 
 
 //====================================================
@@ -730,7 +733,7 @@ var float L1_realizedPnlUsd = 0.0
 if exportToLogs and barstate.isfirst
     log.info(
       "runId,tf,scriptVer,tradeSeq," +
-      "tradeId,coin,direction," +
+      "tradeId,coin,direction,tvEntryId,tvExitId," +
       "entryEngine,htfStateAtEntry,htfFlipEvent,lastFlipType,acceptUpCountAtEntry,entryQualityFlags," +
       "entryDatetime,exitDatetime," +
       "entryTimeMs,exitTimeMs," +
@@ -804,9 +807,13 @@ if exportToLogs and barstate.isconfirmed
             float tvPnlPct= strategy.closedtrades.profit_percent(k)
             string dir    = sz >= 0 ? "LONG" : "SHORT"
 
-            // Exit reason: use the actual exit order id when available
-            // This is what lets TP1 appear as "TP1" (or whatever your exit id is)
-            string exitReason = strategy.closedtrades.exit_id(k)
+            // Trade List IDs (best 1:1 identity you can get from Pine)
+            string tvEntryId = strategy.closedtrades.entry_id(k)
+            string tvExitId  = strategy.closedtrades.exit_id(k)
+
+            // Keep your field name, but make it explicit that it is TV's exit_id
+            string exitReason = tvExitId
+
 
             // Regime at exit: use current mode tagging at the bar the exit happens
             // (for partial exits while still in position, this is correct "at time of exit")
@@ -827,8 +834,10 @@ if exportToLogs and barstate.isconfirmed
 
             log.info(
                  L1_runId + "," + L1_tf + "," + L1_scriptVer + "," + str.tostring(tradeSeq) + "," +
-                 str.tostring(L1_tradeId) + "," +
+                 str.tostring(tradeSeq) + "," +
                  str.replace_all(syminfo.ticker, ",", ";") + "," + dir + "," +
+                 str.replace_all(tvEntryId, ",", ";") + "," +
+                 str.replace_all(tvExitId, ",", ";") + "," +
 
                  // Entry diagnostics (from your committed snapshot; same for TP1 + final exits)
                  str.replace_all(L1_entryEngine, ",", ";") + "," +
