@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v5.55 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v5.56 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -764,7 +764,7 @@ if exportToLogs and barstate.isfirst
 // Helper: safe datetime formatting (Pine v6)
 fmtDT(_t) =>
     // _t is ms since epoch; format in the chart's timezone
-    str.format_time(_t, "yyyy-MM-dd HH:mm", syminfo.timezone)
+    str.format_time(_t, "yyyy-MM-dd HH:mm", logTZ)
 
 
 // Helper: latch an exit (PURE function: returns new values, no global mutation)
