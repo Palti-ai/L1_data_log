@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v5.56 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v5.59 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -648,6 +648,12 @@ L1_maePct(_dir, _entryPx, _maxAdvPx) =>
     float q = _dir == "LONG" ? (_entryPx - _maxAdvPx) : (_maxAdvPx - _entryPx)
     _entryPx != 0 ? (q / _entryPx) * 100.0 : na
 
+endsWith(string s, string suf) =>
+    ls = str.length(s)
+    lf = str.length(suf)
+    ls >= lf and str.substring(s, ls - lf, ls) == suf
+
+
 //====================================================
 // Entry quality flags (bitmask)
 // A=accept ok, R=retest/reclaim ok, H=HTF ok, X=not extended ok
@@ -743,7 +749,10 @@ if exportToLogs and barstate.isfirst
       "mfePct,maePct," +
       "barsInTrade," +
       "exitReason," +
+      "EXIT_ENGINE_DEACTIVATE," +
+      "EXIT_STOP_STRUCT,EXIT_TIME_STOP,EXIT_HTF_FLIP,EXIT_TRAIL,EXIT_REGIME_CHANGE," +
       "regimeAtEntry,regimeAtExit," +
+
       "entryArchetype," +
       "maxFavorableBarIndex,maxAdverseBarIndex," +
       "tradeId_dup_entryBarIndex,tradeId_dup_exitBarIndex," +
@@ -814,6 +823,32 @@ if exportToLogs and barstate.isconfirmed
             // Keep your field name, but make it explicit that it is TV's exit_id
             string exitReason = tvExitId
 
+            // ----------------------------------------------------
+            // Exit reason instrumentation: ENGINE_DEACTIVATE
+            // ----------------------------------------------------
+            // "Close entry(s) order ..." is TradingView's exit_id when the strategy closes without a typed comment.
+            // We classify it as ENGINE_DEACTIVATE only if no other typed exit class fired.
+            isTVUntypedClose = str.contains(tvExitId, "Close entry(s) order")
+
+            
+            // --- Exit-reason instrumentation (0/1 flags), derived from TV exit_id (== your close comment) ---
+            // Structural stops / invalidations
+            int EXIT_STOP_STRUCT = (tvExitId == "BULL_INV" or tvExitId == "BEAR_INV" or tvExitId == "RB_INV" or tvExitId == "RA_STOP") ? 1 : 0
+
+            // Time-stops (your conventions use *_TS)
+            int EXIT_TIME_STOP = endsWith(tvExitId, "_TS") ? 1 : 0
+
+            // HTF flip on the current bar (NOTE: correct for newly-emitted records, because they occur on this bar)
+            int EXIT_HTF_FLIP = (tvExitId == "HTF_OFF_CUT" or tvExitId == "HTF_FLIP") ? 1 : 0
+
+            // Trail exits (reserved — becomes 1 once you emit e.g. "BULL_TRAIL" as an exit id/comment)
+            int EXIT_TRAIL = str.contains(tvExitId, "TRAIL") ? 1 : 0
+
+            // Regime-change exits (kill-switch / forced regime exit)
+            int EXIT_REGIME_CHANGE = (tvExitId == "BEAR_KILL" or tvExitId == "BEAR_EXPIRE_FORCE") ? 1 : 0
+
+            // If you already have your 5 exit flags implemented, this is the safest gating:
+            EXIT_ENGINE_DEACTIVATE = isTVUntypedClose and (EXIT_STOP_STRUCT == 0) and (EXIT_TIME_STOP == 0) and (EXIT_HTF_FLIP == 0) and (EXIT_TRAIL == 0) and (EXIT_REGIME_CHANGE == 0) ? 1 : 0
 
             // Regime at exit: use current mode tagging at the bar the exit happens
             // (for partial exits while still in position, this is correct "at time of exit")
@@ -864,10 +899,16 @@ if exportToLogs and barstate.isconfirmed
                  str.tostring(mfePct) + "," + str.tostring(maePct) + "," +
 
                  // Duration + exit reason + regimes
-                 str.tostring(barsInTrade) + "," +
-                 str.replace_all(exitReason, ",", ";") + "," +
-                 str.replace_all(L1_regEntry, ",", ";") + "," +
-                 str.replace_all(regExit, ",", ";") + "," +
+                str.tostring(barsInTrade) + "," +
+                str.replace_all(exitReason, ",", ";") + "," +
+                str.tostring(EXIT_ENGINE_DEACTIVATE) + "," +
+                str.tostring(EXIT_STOP_STRUCT) + "," +
+                str.tostring(EXIT_TIME_STOP) + "," +
+                str.tostring(EXIT_HTF_FLIP) + "," +
+                str.tostring(EXIT_TRAIL) + "," +
+                str.tostring(EXIT_REGIME_CHANGE) + "," +
+                str.replace_all(L1_regEntry, ",", ";") + "," +
+                str.replace_all(regExit, ",", ";") + "," +
 
                  // Archetype + bars
                  str.replace_all(L1_arch, ",", ";") + "," +
