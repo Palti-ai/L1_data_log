@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v5.61 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v5.62 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -751,7 +751,7 @@ if exportToLogs and barstate.isfirst
       "barsInTrade," +
       "exitReason," +
       "EXIT_ENGINE_DEACTIVATE," +
-      "EXIT_STOP_STRUCT,EXIT_TIME_STOP,EXIT_HTF_FLIP,EXIT_TRAIL,EXIT_REGIME_CHANGE," +
+      "EXIT_STOP_STRUCT,EXIT_TIME_STOP,EXIT_HTF_FLIP,EXIT_TRAIL,EXIT_REGIME_CHANGE,EXIT_BULL_MOM_LOSS," +
       "regimeAtEntry,regimeAtExit," +
 
       "entryArchetype," +
@@ -851,6 +851,8 @@ if exportToLogs and barstate.isconfirmed
             // If you already have your 5 exit flags implemented, this is the safest gating:
             EXIT_ENGINE_DEACTIVATE = isTVUntypedClose and (EXIT_STOP_STRUCT == 0) and (EXIT_TIME_STOP == 0) and (EXIT_HTF_FLIP == 0) and (EXIT_TRAIL == 0) and (EXIT_REGIME_CHANGE == 0) ? 1 : 0
 
+            int EXIT_BULL_MOM_LOSS = (tvExitId == "BULL_MOM_LOSS" or exitReason == "BULL_MOM_LOSS") ? 1 : 0
+
             // Regime at exit: use current mode tagging at the bar the exit happens
             // (for partial exits while still in position, this is correct "at time of exit")
             string regExit = logModeNow()
@@ -908,6 +910,7 @@ if exportToLogs and barstate.isconfirmed
                 str.tostring(EXIT_HTF_FLIP) + "," +
                 str.tostring(EXIT_TRAIL) + "," +
                 str.tostring(EXIT_REGIME_CHANGE) + "," +
+                str.tostring(EXIT_BULL_MOM_LOSS) + "," +
                 str.replace_all(L1_regEntry, ",", ";") + "," +
                 str.replace_all(regExit, ",", ";") + "," +
 
