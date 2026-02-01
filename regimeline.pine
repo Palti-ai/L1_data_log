@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v5.59 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v5.61 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -516,6 +516,7 @@ var float bullStartY   = na
 var int   bullEndBar   = na
 var float bullEndY     = na
 var bool bullTP1Done = false
+var int bullNoNewHiStreak = 0
 var int bullLastAddBar = na
 var float bullAddRefHi = na   // last add/entry reference high-water mark
 
@@ -2668,6 +2669,14 @@ if inPos
     tradeHi := na(tradeHi) ? high : math.max(tradeHi, high)
     tradeLo := na(tradeLo) ? low  : math.min(tradeLo, low)
 
+// ---- Bull runner stall tracking (confirmed only) ----
+// Counts consecutive confirmed bars with NO new tradeHi while in BULL.
+if barstate.isconfirmed
+    if inPos and posTag == "BULL"
+        bullNoNewHiStreak := (tradeHi <= nz(tradeHi[1])) ? (nz(bullNoNewHiStreak[1]) + 1) : 0
+    else
+        bullNoNewHiStreak := 0
+
 
 //====================================================
 // L2 Candidate events (missed-opportunity triggers) + blocked masks
@@ -2864,6 +2873,24 @@ bullMFE = (inPos and posTag=="BULL") ? (tradeHi - strategy.position_avg_price) :
 bullBarsIn = (inPos and posTag=="BULL" and not na(lastEntryBar)) ? (bar_index - lastEntryBar) : 0
 bullTimeStop = inPos and posTag=="BULL" and (bullBarsIn >= bullTS_Bars) and (bullMFE < atr * bullTS_MinMFE_ATR)
 
+//====================================================
+// Bull MOM_LOSS (runner-only exit AFTER TP1)
+// Intent: after TP1, if continuation fails (stall + rollover), exit before BULL_INV.
+//====================================================
+int bullMomNoHHBars = 8          // stall window (no new highs)
+int bullMomEmaCloses = 2         // rollover confirmation (consecutive closes below EMAfast)
+bool bullEmaRoll = (bullMomEmaCloses == 2) ? (close < emaFast and close[1] < emaFast) : (close < emaFast)
+
+// Runner-only: only after TP1 is done
+// Giveback-from-peak guard: prevents premature exits during healthy digestion.
+float bullGiveback = inPos and isLong and (posTag=="BULL") ? (tradeHi - close) : 0.0
+bool bullGivebackOk = bullGiveback >= (atr * 0.60)  // <-- only change lever (tunable)
+
+// MOM_LOSS: TP1 must be done + stall + rollover + meaningful giveback
+bool bullMomLoss =
+     inPos and isLong and (posTag == "BULL") and bullTP1Done and
+     (bullNoNewHiStreak >= bullMomNoHHBars) and bullEmaRoll and bullGivebackOk
+
 raBarsIn = (inPos and posTag=="RANGEA" and not na(raEntryBar)) ? (bar_index - raEntryBar) : 0
 raTimeStop = inPos and posTag=="RANGEA" and (raBarsIn >= raTS_Bars)
 
@@ -2899,8 +2926,13 @@ if exitOk and inPos
         doExit := true
         exitReason := "BEAR_KILL"
         exitReg := "BEAR"
+    // 2) Bull momentum-loss (runner-only, after TP1)
+    if (not doExit) and bullMomLoss
+        doExit := true
+        exitReason := "BULL_MOM_LOSS"
+        exitReg := "BULL"
 
-    // 2) Bull invalidation
+    // 3) Bull invalidation (fallback)
     if (not doExit) and bullCloseInvalid
         doExit := true
         exitReason := "BULL_INV"
