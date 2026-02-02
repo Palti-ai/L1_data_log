@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v5.68 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v5.69 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -92,11 +92,12 @@ bullTrailBuf_ATR = input.float(0.10, "Bull runner: buffer under EMA (ATR*x)", gr
 bullTrailArm_ATR = input.float(0.80, "Bull runner: arm trail only after MFE >= ATR*x", group=grpBull, step=0.05)
 // --- Bull MOM_LOSS gating (Option B) ---
 bullMomLossOn              = input.bool(true,  "Bull MOM_LOSS: enable", group=grpBull)
-bullMomLossGateWeak        = input.bool(false,  "Bull MOM_LOSS: gate by weak context (Option B)", group=grpBull)
+bullMomLossGateWeak        = input.bool(true,  "Bull MOM_LOSS: gate by weak context (Option B)", group=grpBull)
 bullMomLossAllowHTFOff     = input.bool(true,  "MOM_LOSS allowed when HTF OFF", group=grpBull)
 bullMomLossAllowHTFNeutral = input.bool(true,  "MOM_LOSS allowed when HTF neutral", group=grpBull)
 bullMomLossAllowHTFFlipOff = input.bool(true,  "MOM_LOSS allowed on HTF_OFF flip bar", group=grpBull)
 bullMomLossAllowAfterEndBull = input.bool(true, "MOM_LOSS allowed after END_BULL (in-trade)", group=grpBull)
+bullMomLossAllowAfterTP1Roll = input.bool(true, "MOM_LOSS allowed after TP1 on first rollover (close<EMAfast)", group=grpBull)
 // --- MOM_LOSS tuning: earlier trigger AFTER TP1 + END_BULL only ---
 bullMomBarsAfterEndBull   = input.int(4,   "MOM_LOSS stall bars after END_BULL (TP1)", group=grpBull, minval=1)
 bullMomEmaClosesAfterEnd  = input.int(1,   "MOM_LOSS EMA closes after END_BULL (TP1)", group=grpBull, minval=1, maxval=2)
@@ -2928,17 +2929,17 @@ bool bullAfterEnd = inPos and isLong and (posTag == "BULL") and (not na(bullEndB
 int  tp1AgeBars   = bullTP1Done ? (bar_index - bullTP1Bar) : 999999
 bool tp1RecentOk  = bullTP1Done and (tp1AgeBars <= bullMomMaxBarsAfterTP1)
 
-int bullMomEmaCloses = (bullAfterEnd and bullTP1Done) ? bullMomEmaClosesAfterEnd : 2
+int bullMomEmaCloses = (bullTP1Done and tp1RecentOk) ? bullMomEmaClosesAfterEnd : 2
 bool bullEmaRoll = (bullMomEmaCloses == 2) ? (close < emaFast and close[1] < emaFast) : (close < emaFast)
 
 
 // Runner-only: only after TP1 is done
 // Giveback-from-peak guard: prevents premature exits during healthy digestion.
 float bullGiveback = inPos and isLong and (posTag=="BULL") ? (tradeHi - close) : 0.0
-float gbATR = (bullAfterEnd and bullTP1Done) ? bullMomGivebackATR_AfterEnd : 0.60
+float gbATR = (bullTP1Done and tp1RecentOk) ? bullMomGivebackATR_AfterEnd : 0.60
 bool bullGivebackOk = bullGiveback >= (atr * gbATR)
 
-int momBars = (bullAfterEnd and bullTP1Done) ? bullMomBarsAfterEndBull : bullMomNoHHBars
+int momBars = (bullTP1Done and tp1RecentOk) ? bullMomBarsAfterEndBull : bullMomNoHHBars
 bool stallOk = (bullNoNewCloseStreak >= momBars)
 
 // Raw MOM_LOSS: TP1 must be done + stall + rollover + meaningful giveback
@@ -2952,7 +2953,8 @@ bool momLossWeakCtx =
      (bullMomLossAllowHTFOff     and (not htfTrendOk)) or
      (bullMomLossAllowHTFNeutral and htfNeutral) or
      (bullMomLossAllowHTFFlipOff and (htfFlipEventNow == "HTF_OFF")) or
-     (bullMomLossAllowAfterEndBull and (posTag == "BULL") and inPos and (not na(bullEndBar)) and (bar_index >= bullEndBar))
+     (bullMomLossAllowAfterEndBull and (posTag == "BULL") and inPos and (not na(bullEndBar)) and (bar_index >= bullEndBar)) or
+     (bullMomLossAllowAfterTP1Roll and inPos and isLong and (posTag == "BULL") and bullTP1Done and tp1RecentOk and (close < emaFast))
 
 // Final gated signal
 bool bullMomLoss =
