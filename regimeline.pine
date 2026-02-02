@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v5.63 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v5.66 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -90,6 +90,12 @@ bullTrailOn      = input.bool(true, "Bull runner: trail ON", group=grpBull)
 bullTrailUseSlow = input.bool(true, "Bull runner: trail EMA Slow (else EMA Fast)", group=grpBull)
 bullTrailBuf_ATR = input.float(0.10, "Bull runner: buffer under EMA (ATR*x)", group=grpBull, step=0.05)
 bullTrailArm_ATR = input.float(0.80, "Bull runner: arm trail only after MFE >= ATR*x", group=grpBull, step=0.05)
+// --- Bull MOM_LOSS gating (Option B) ---
+bullMomLossOn              = input.bool(true,  "Bull MOM_LOSS: enable", group=grpBull)
+bullMomLossGateWeak        = input.bool(true,  "Bull MOM_LOSS: gate by weak context (Option B)", group=grpBull)
+bullMomLossAllowHTFOff     = input.bool(true,  "MOM_LOSS allowed when HTF OFF", group=grpBull)
+bullMomLossAllowHTFNeutral = input.bool(true,  "MOM_LOSS allowed when HTF neutral", group=grpBull)
+bullMomLossAllowHTFFlipOff = input.bool(true,  "MOM_LOSS allowed on HTF_OFF flip bar", group=grpBull)
 bullAddOn           = input.bool(true,  "Bull ADD: enable continuation add-entry", group=grpBull)
 bullAddSpacingBars  = input.int(18,     "Bull ADD: min bars between adds", group=grpBull, minval=1)
 bullAddMaxExt_ATR   = input.float(1.40, "Bull ADD: block if extended > ATR*x above EMAfast", group=grpBull, step=0.05)
@@ -99,6 +105,7 @@ bullAddBodyPct      = input.float(0.18, "Bull ADD: body/range >=", group=grpBull
 bullAddAfterTP1Only = input.bool(true, "Bull ADD: allow only after TP1", group=grpBull)
 bullAddProofMFE_ATR = input.float(0.80, "Bull ADD: allow after MFE >= ATR*x (proof)", group=grpBull, step=0.05)
 bullStartEntryOn      = input.bool(false, "Bull: allow START entry (breakout follow-through)")
+bullStartRequireMicroPB = input.bool(true, "Bull START: require microPB touch (looser=earlier entry)", group=grpBull)
 bullStartEntryMaxExt  = input.float(1.05, "Bull START: max extension (ATR)", step=0.05)   // keep tight
 bullStartEntryMaxExtEMA = input.float(1.60, "Bull START: max extension above EMAfast (ATR)", step=0.05, group=grpBull)
 bullStartEntryBodyPct = input.float(0.22, "Bull START: min body %", step=0.01)            // 0.20–0.25 typical
@@ -1193,10 +1200,7 @@ bool bullStartInWindow =
      bullArmed and (not na(bullArmedBar)) and
      ((bar_index - bullArmedBar) >= 0) and ((bar_index - bullArmedBar) < bullStartWindowBars)
 
-bool bullStartEntry =
-     bullStartEntryOn and bullStartInWindow and (not bullPBSeen) and (not bullImpulseDone) and
-     bullStartStrong and bullStartNotExtended and bullStartNotExtendedEMA and bullStartNoChase and bullStartMicroPB and
-     bullStartADXok and bullStartDmiOk
+bool bullStartEntry = bullStartEntryOn and bullStartInWindow and (not bullPBSeen) and (not bullImpulseDone) and bullStartStrong and bullStartNotExtended and bullStartNotExtendedEMA and bullStartNoChase and (not bullStartRequireMicroPB or bullStartMicroPB) and bullStartADXok and bullStartDmiOk
 
 if barstate.isconfirmed and (not inPos)
     // gate 1: window + state
@@ -2693,6 +2697,17 @@ if barstate.isconfirmed
     else
         bullNoNewHiStreak := 0
 
+// --- Close-based stall tracking (fix for wick-chop) ---
+var float bullBestClose = na
+var int   bullNoNewCloseStreak = 0
+
+if (not inPos) or (not isLong) or (posTag != "BULL")
+    bullBestClose := na
+    bullNoNewCloseStreak := 0
+else
+    bullBestClose := na(bullBestClose) ? close : math.max(bullBestClose, close)
+    bullNoNewCloseStreak := (close >= bullBestClose[1]) ? 0 : (bullNoNewCloseStreak + 1)
+
 
 //====================================================
 // L2 Candidate events (missed-opportunity triggers) + blocked masks
@@ -2890,8 +2905,9 @@ bullBarsIn = (inPos and posTag=="BULL" and not na(lastEntryBar)) ? (bar_index - 
 bullTimeStop = inPos and posTag=="BULL" and (bullBarsIn >= bullTS_Bars) and (bullMFE < atr * bullTS_MinMFE_ATR)
 
 //====================================================
-// Bull MOM_LOSS (runner-only exit AFTER TP1)
-// Intent: after TP1, if continuation fails (stall + rollover), exit before BULL_INV.
+// Bull MOM_LOSS (runner-only exit AFTER TP1) — Option B (gated)
+// Intent: after TP1, if continuation fails (stall + rollover), exit before BULL_INV,
+// BUT only in "weak context" (post-HTF weakening / post-cycle conditions).
 //====================================================
 int bullMomNoHHBars = 8          // stall window (no new highs)
 int bullMomEmaCloses = 2         // rollover confirmation (consecutive closes below EMAfast)
@@ -2902,10 +2918,20 @@ bool bullEmaRoll = (bullMomEmaCloses == 2) ? (close < emaFast and close[1] < ema
 float bullGiveback = inPos and isLong and (posTag=="BULL") ? (tradeHi - close) : 0.0
 bool bullGivebackOk = bullGiveback >= (atr * 0.60)  // <-- only change lever (tunable)
 
-// MOM_LOSS: TP1 must be done + stall + rollover + meaningful giveback
-bool bullMomLoss =
+// Raw MOM_LOSS: TP1 must be done + stall + rollover + meaningful giveback
+bool bullMomLossRaw =
      inPos and isLong and (posTag == "BULL") and bullTP1Done and
-     (bullNoNewHiStreak >= bullMomNoHHBars) and bullEmaRoll and bullGivebackOk
+     (bullNoNewCloseStreak >= bullMomNoHHBars) and bullEmaRoll and bullGivebackOk
+
+// Option B: weak-context gate (HTF OFF / HTF neutral / HTF_OFF flip bar)
+bool momLossWeakCtx =
+     (bullMomLossAllowHTFOff     and (not htfTrendOk)) or
+     (bullMomLossAllowHTFNeutral and htfNeutral) or
+     (bullMomLossAllowHTFFlipOff and (htfFlipEventNow == "HTF_OFF"))
+
+// Final gated signal
+bool bullMomLoss =
+     bullMomLossOn and bullMomLossRaw and (not bullMomLossGateWeak or momLossWeakCtx)
 
 raBarsIn = (inPos and posTag=="RANGEA" and not na(raEntryBar)) ? (bar_index - raEntryBar) : 0
 raTimeStop = inPos and posTag=="RANGEA" and (raBarsIn >= raTS_Bars)
