@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v5.80 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v5.82 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -84,7 +84,7 @@ bullPBMaxAbove_ATR      = input.float(0.80, "Bull PB: max close above bullLevel 
 bullPBMaxBarsSinceAccept = input.int(24, "Bull PB: max bars since accept-up", group=grpBull, minval=1)
 bullPBRequireTouchEF    = input.bool(false, "Bull PB: require pullback touch EMAfast or bullLevel", group=grpBull)
 bullPBMaxExtAboveEma_ATR = input.float(1.20, "Bull PB: max extension above EMAfast (ATR) to allow PB", group=grpBull, step=0.05)
-bullPBMinPullback_ATR    = input.float(0.45, "Bull PB: min pullback depth from trade high (ATR)", group=grpBull, step=0.05)
+bullPBMinPullback_ATR    = input.float(0.60, "Bull PB: min pullback depth from trade high (ATR)", group=grpBull, step=0.05)
 bullPBTouchRequireReclaim = input.bool(false, "Bull PB: require reclaim close after touch", group=grpBull)
 
 // --- Bull Acceptance-Compression entry (no PB) ---
@@ -2432,11 +2432,19 @@ float bullPBDepth =
      (inPos and isLong and posTag=="BULL")
          ? (tradeHi - low)
          : (bullRecentHigh24 - low)
-// Veto only: exhaustion-top micro-PB = very extended + very shallow pullback
-bool bullPBExhaustVeto =
-     (atr > 0) and
-     ((close - emaFast) > (atr * bullPBMaxExtAboveEma_ATR)) and
-     (bullPBDepth < (atr * bullPBMinPullback_ATR))
+
+// Veto only: exhaustion-top micro-PB
+// Extended = far above EMAfast OR far above bullLevel (EMAfast can catch up late-trend)
+bool bullPBExtended =
+     (atr > 0) and (
+        ((close - emaFast) > (atr * bullPBMaxExtAboveEma_ATR)) or
+        (not na(bullLevel) and ((close - bullLevel) > (atr * bullPBMaxAbove_ATR)))
+     )
+
+bool bullPBShallow = (atr > 0) and (bullPBDepth < (atr * bullPBMinPullback_ATR))
+
+bool bullPBExhaustVeto = bullPBExtended and bullPBShallow
+
 
 
 // Touch logic: by default allow "touch" (brings PB trades back). Optional strict mode requires reclaim close.
