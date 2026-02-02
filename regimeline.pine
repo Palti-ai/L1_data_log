@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v5.85 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v5.88 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -92,6 +92,13 @@ bullPBLateStallNoHHBars = input.int(12, "Bull PB: late-stall bars no new high", 
 bullPBLateAgeBars        = input.int(72,  "Bull PB: late-lifecycle age (bars since START_BULL)", group=grpBull, minval=24, maxval=500)
 bullPBLateMaxAbove_ATR   = input.float(1.05, "Bull PB: late veto if close above bullLevel > ATR", group=grpBull, step=0.05)
 bullPBLateMinDepth_ATR   = input.float(1.05, "Bull PB: late veto if PB depth < ATR", group=grpBull, step=0.05)
+bullPBMaxAgeBars = input.int(
+    120,
+    "Bull PB: max bars since START_BULL",
+    group = grpBull,
+    minval = 24,
+    maxval = 500
+)
 
 // --- Bull Acceptance-Compression entry (no PB) ---
 bullCompOn = input.bool(true, "Bull COMP: enable acceptance-compression entry", group=grpBull)
@@ -273,6 +280,8 @@ l2VolN       = input.int(20, "L2 volatility baseline N", group=grpLogs, minval=5
 grpDiag="Diagnostics"
 showDiagHUD = input.bool(true, "Show ADX Diagnostics HUD", group=grpDiag)
 showBlockLabels = input.bool(false, "Show labels ONLY when entry is blocked", group=grpDiag)
+dbgPBProbe = input.bool(false, "DBG: PBDBG to Logs (PB candidates)", group=grpDiag)
+dbgPBProbeIncludeBlocked = input.bool(true, "DBG: PBDBG include BLOCKED candidates", group=grpDiag)
 
 
 //====================================================
@@ -804,6 +813,19 @@ if exportToLogs and barstate.isfirst
       // ---- MONETIZATION / MANAGEMENT ----
       "tp1Hit,trailEver,addCount"
     )
+
+// PBDBG header (separate stream; rowType=PBDBG)
+if exportToLogs and dbgPBProbe and barstate.isfirst
+    log.info(
+      "rowType,runId,tf,scriptVer,coin," +
+      "pbStatus,barIndex,datetime,timeMs," +
+      "close,atr,bullLevel,emaFast," +
+      "distBullATR,distEFAtr," +
+      "pbAgeBars,bullLegNoNewHiStreak,pbDepthATR," +
+      "pbExtended,pbShallow,pbExhaustVeto,pbLateStallVeto,pbLifecycleVeto,pbTouchOk," +
+      "bullPBEnter,bullPBEnterExec"
+    )
+
 
 
 // Helper: safe datetime formatting (Pine v6)
@@ -2476,6 +2498,8 @@ bool bullPBExhaustVeto = bullPBExtended and bullPBShallow
 
 // --- PB Late-Lifecycle veto (targets “late PB near exhaustion”, not micro-PB only) ---
 int bullPBAgeBars = (not na(bullStartBar)) ? (bar_index - bullStartBar) : 0
+bool bullPBAgeVeto = bullPBAgeBars > bullPBMaxAgeBars
+
 // --- PB Late-Stall veto (kills late PBs even if pullback depth is real) ---
 bool bullPBLateStallAge = bullPBAgeBars >= bullPBLateStallAgeBars
 bool bullPBLateStall = bullLegNoNewHiStreak >= bullPBLateStallNoHHBars
@@ -2506,7 +2530,42 @@ bool bullPBEnterExec =
      (not bullPBExhaustVeto) and
      (not bullPBLateVeto) and
      (not bullPBLifecycleVeto) and
-     (not bullPBLateStallVeto)
+     (not bullPBLateStallVeto) and
+     (not bullPBAgeVeto)
+
+// ==============================
+// PBDBG: log PB candidates (EXEC + optional BLOCK) to Pine Logs
+// ==============================
+if exportToLogs and dbgPBProbe and barstate.isconfirmed and bullPBEnter and (dbgPBProbeIncludeBlocked or bullPBEnterExec)
+    string pbStatus = bullPBEnterExec ? "EXEC" : "BLOCK"
+
+    float distBullATR = (atr > 0 and not na(bullLevel)) ? ((close - bullLevel) / atr) : na
+    float distEFAtr   = (atr > 0) ? ((close - emaFast) / atr) : na
+    float pbDepthATR  = (atr > 0) ? (bullPBDepth / atr) : na
+
+    log.info(str.format(
+      "PBDBG,{0},{1},{2},{3}," +
+      "{4},{5},{6},{7}," +
+      "{8},{9},{10},{11}," +
+      "{12},{13}," +
+      "{14},{15},{16}," +
+      "{17},{18},{19},{20},{21},{22}," +
+      "{23},{24}",
+      L1_runId, L1_tf, L1_scriptVer, syminfo.ticker,
+      pbStatus, bar_index, fmtDT(time), time,
+      close, atr, bullLevel, emaFast,
+      distBullATR, distEFAtr,
+      bullPBAgeBars, bullLegNoNewHiStreak, pbDepthATR,
+      (bullPBExtended ? 1 : 0),
+      (bullPBShallow ? 1 : 0),
+      (bullPBExhaustVeto ? 1 : 0),
+      (bullPBLateStallVeto ? 1 : 0),
+      (bullPBLifecycleVeto ? 1 : 0),
+      (bullPBTouchOk ? 1 : 0),
+      1, // bullPBEnter
+      (bullPBEnterExec ? 1 : 0)
+    ))
+
 
 // --- PB-Guard v2 (exhaustion micro-PB filter) ---
 
@@ -2791,11 +2850,13 @@ if entered and exportL2 and barstate.isconfirmed
 //====================================================
 
 // --- Bull-leg stall tracking (runs even when flat) ---
-// Counts consecutive confirmed bars with NO new bull-leg high while Bull is armed (regime active).
+// Counts consecutive confirmed bars with NO new bull-leg high while Bull is armed.
 if barstate.isconfirmed
     if bullArmed and (not bearActive) and (not pendingBear)
+        float prevHi = nz(bullLegHi[1], na)
         bullLegHi := na(bullLegHi) ? high : math.max(bullLegHi, high)
-        bullLegNoNewHiStreak := (bullLegHi <= nz(bullLegHi[1])) ? (nz(bullLegNoNewHiStreak[1]) + 1) : 0
+        bool madeNewHi = (not na(prevHi)) and (bullLegHi > prevHi)
+        bullLegNoNewHiStreak := madeNewHi ? 0 : (nz(bullLegNoNewHiStreak[1]) + 1)
     else
         bullLegHi := na
         bullLegNoNewHiStreak := 0
