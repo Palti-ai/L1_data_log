@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v5.72 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v5.73 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -111,7 +111,7 @@ bullAddBreakLB      = input.int(6,      "Bull ADD: reclaim breaks last N-bar hig
 bullAddBodyPct      = input.float(0.18, "Bull ADD: body/range >=", group=grpBull, step=0.02)
 bullAddAfterTP1Only = input.bool(true, "Bull ADD: allow only after TP1", group=grpBull)
 bullAddProofMFE_ATR = input.float(0.80, "Bull ADD: allow after MFE >= ATR*x (proof)", group=grpBull, step=0.05)
-bullStartEntryOn      = input.bool(false, "Bull: allow START entry (breakout follow-through)")
+bullStartEntryOn = input.bool(false, "Bull: allow START entry (breakout follow-through)", group=grpBull)
 bullStartRequireMicroPB = input.bool(false, "Bull START: require microPB touch (looser=earlier entry)", group=grpBull)
 bullStartEntryMaxExt  = input.float(1.05, "Bull START: max extension (ATR)", step=0.05)   // keep tight
 bullStartEntryMaxExtEMA = input.float(1.60, "Bull START: max extension above EMAfast (ATR)", step=0.05, group=grpBull)
@@ -462,6 +462,10 @@ var string posTag = ""   // "", "BULL", "RANGEA", "RANGEB"
 
 // Persistent entry-origin label used for exit logging (Strategy v1.0 requirement)
 var string entryModeTag = ""  // "", "BULL", "RANGE-A", "RANGE-B"
+
+// --- Entry reason tagging (debug-safe, affects only comments) ---
+var string lastEntryReason = ""
+
 
 // Map posTag storage format to log format
 posTagToLogMode(_tag) =>
@@ -2269,14 +2273,10 @@ bullImpulseEnter =
      bullLocalTrendOk and
      htfBullOk and bullStartADXok
 
-bullCompEnter =
-     barstate.isconfirmed and
-     (not inPos) and (mode == Mode.Bull) and
-     scoreGateOk(Mode.Bull) and
-     bullAcceptCompression and
-     (not bullStartEntry) and
-     (not bullImpulseDone) and
-     bullLocalTrendOk
+bullCompEnter = barstate.isconfirmed and (not inPos) and (mode == Mode.Bull) and scoreGateOk(Mode.Bull) and
+     bullAcceptCompression and bullCompNotChase and
+     (not bullStartEntry) and (not bullImpulseDone) and
+     bullLocalTrendOk and htfBullOk and adxBullExecOk and (not bullUseDMI or (pdi > mdi))
 
 
 bullPBEnter =
