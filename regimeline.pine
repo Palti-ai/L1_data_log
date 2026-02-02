@@ -111,12 +111,12 @@ bullAddBreakLB      = input.int(6,      "Bull ADD: reclaim breaks last N-bar hig
 bullAddBodyPct      = input.float(0.18, "Bull ADD: body/range >=", group=grpBull, step=0.02)
 bullAddAfterTP1Only = input.bool(true, "Bull ADD: allow only after TP1", group=grpBull)
 bullAddProofMFE_ATR = input.float(0.80, "Bull ADD: allow after MFE >= ATR*x (proof)", group=grpBull, step=0.05)
-bullStartEntryOn      = input.bool(true, "Bull: allow START entry (breakout follow-through)")
+bullStartEntryOn      = input.bool(false, "Bull: allow START entry (breakout follow-through)")
 bullStartRequireMicroPB = input.bool(false, "Bull START: require microPB touch (looser=earlier entry)", group=grpBull)
 bullStartEntryMaxExt  = input.float(1.05, "Bull START: max extension (ATR)", step=0.05)   // keep tight
 bullStartEntryMaxExtEMA = input.float(1.60, "Bull START: max extension above EMAfast (ATR)", step=0.05, group=grpBull)
 bullStartEntryBodyPct = input.float(0.22, "Bull START: min body %", step=0.01)            // 0.20–0.25 typical
-bullStartWindowBars   = input.int(2, "Bull START: allow within N bars after accept-up", minval=1, maxval=6, group=grpBull)
+bullStartWindowBars   = input.int(1, "Bull START: allow within N bars after accept-up", minval=1, maxval=6, group=grpBull)
 bullPB_ExecADXMin = input.float(18, "Bull PB EXEC: require ADX >=", group=grpADX, step=0.5)
 bullAddCloseNearHigh = input.float(0.70, "Bull ADD: close in top X of range", group=grpBull, step=0.05)
 
