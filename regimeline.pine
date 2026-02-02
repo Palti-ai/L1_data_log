@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v5.83 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v5.84 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -87,6 +87,9 @@ bullPBMaxExtAboveEma_ATR = input.float(1.20, "Bull PB: max extension above EMAfa
 bullPBMinPullback_ATR    = input.float(0.60, "Bull PB: min pullback depth from trade high (ATR)", group=grpBull, step=0.05)
 bullPBTouchRequireReclaim = input.bool(false, "Bull PB: require reclaim close after touch", group=grpBull)
 bullPBMaxPerBull = input.int(2, "Bull PB: max PBs per bull leg", group=grpBull, minval=1, maxval=5)
+bullPBLateAgeBars        = input.int(72,  "Bull PB: late-lifecycle age (bars since START_BULL)", group=grpBull, minval=24, maxval=500)
+bullPBLateMaxAbove_ATR   = input.float(1.05, "Bull PB: late veto if close above bullLevel > ATR", group=grpBull, step=0.05)
+bullPBLateMinDepth_ATR   = input.float(1.05, "Bull PB: late veto if PB depth < ATR", group=grpBull, step=0.05)
 
 // --- Bull Acceptance-Compression entry (no PB) ---
 bullCompOn = input.bool(true, "Bull COMP: enable acceptance-compression entry", group=grpBull)
@@ -2459,6 +2462,17 @@ bool bullPBShallow = (atr > 0) and (bullPBDepth < (atr * bullPBMinPullback_ATR))
 
 bool bullPBExhaustVeto = bullPBExtended and bullPBShallow
 
+// --- PB Late-Lifecycle veto (targets “late PB near exhaustion”, not micro-PB only) ---
+int bullPBAgeBars = (not na(bullStartBar)) ? (bar_index - bullStartBar) : 0
+bool bullPBLateAge = bullPBAgeBars >= bullPBLateAgeBars
+
+bool bullPBLateExt =
+     (atr > 0) and (not na(bullLevel)) and ((close - bullLevel) > (atr * bullPBLateMaxAbove_ATR))
+
+bool bullPBLateShallow =
+     (atr > 0) and (bullPBDepth < (atr * bullPBLateMinDepth_ATR))
+
+bool bullPBLifecycleVeto = bullPBLateAge and bullPBLateExt and bullPBLateShallow
 
 
 // Touch logic: by default allow "touch" (brings PB trades back). Optional strict mode requires reclaim close.
@@ -2472,7 +2486,10 @@ bool bullPBTouchOk =
 
 // Final PB execution gate
 bool bullPBEnterExec =
-     bullPBEnter and bullPBTouchOk and (not bullPBExhaustVeto) and (not bullPBLateVeto)
+     bullPBEnter and bullPBTouchOk and
+     (not bullPBExhaustVeto) and
+     (not bullPBLateVeto) and
+     (not bullPBLifecycleVeto)
 
 // --- PB-Guard v2 (exhaustion micro-PB filter) ---
 
