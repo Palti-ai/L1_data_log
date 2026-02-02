@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v5.82 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v5.83 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -86,6 +86,7 @@ bullPBRequireTouchEF    = input.bool(false, "Bull PB: require pullback touch EMA
 bullPBMaxExtAboveEma_ATR = input.float(1.20, "Bull PB: max extension above EMAfast (ATR) to allow PB", group=grpBull, step=0.05)
 bullPBMinPullback_ATR    = input.float(0.60, "Bull PB: min pullback depth from trade high (ATR)", group=grpBull, step=0.05)
 bullPBTouchRequireReclaim = input.bool(false, "Bull PB: require reclaim close after touch", group=grpBull)
+bullPBMaxPerBull = input.int(2, "Bull PB: max PBs per bull leg", group=grpBull, minval=1, maxval=5)
 
 // --- Bull Acceptance-Compression entry (no PB) ---
 bullCompOn = input.bool(true, "Bull COMP: enable acceptance-compression entry", group=grpBull)
@@ -1167,18 +1168,22 @@ if (not inPos) and (not pendingBull) and (not bullArmed) and crossUp and (not be
     pendingBullBar := bar_index
     bullLevel      := rollHigh
 
-
+// --- PB-Count (per bull leg) ---
+var int bullPBCount = 0
 
 // Accept-up = 2 closes above bullLevel
 // HARD VETO: do not accept Bull while Bear overlay is active/pending.
 bullAcceptUp = pendingBull and not na(bullLevel) and (close > bullLevel) and (not bearActive) and (not pendingBear) and
      (not bullAcceptNeed2Cl or close[1] > bullLevel)
+
+
 if bullAcceptUp
     bullArmed       := true
     bullArmedBar    := bar_index
     pendingBull     := false
     pendingBullBar  := na
     lastBullFlipType := "START_BULL"
+    bullPBCount := 0
 
 
     // ---- BULL label anchor (STRUCTURE) ----
@@ -1267,6 +1272,7 @@ if bullLostAcceptance
     bullEndBar := bar_index
     bullEndY   := high + lblPadUp
     lastBullFlipType := "END_BULL"
+    bullPBCount := 0
     bullArmed    := false
     bullArmedBar := na
     bullPBSeen   := false
@@ -2299,6 +2305,14 @@ bullPBEnter =
      (not bullUseDMI or (pdi > mdi)) and
      adxBullPBExecOk
 
+// --- PB-Count cap: compute prospective PB number for this bar ---
+int bullPBCountNext = bullPBCount + (bullPBEnter ? 1 : 0)
+bool bullPBLateVeto = bullPBCountNext > bullPBMaxPerBull
+
+// Commit counter update on signal (even if veto blocks execution, we still count the attempt)
+if bullPBEnter
+    bullPBCount += 1
+
 
 rangeAEnter = barstate.isconfirmed and (not inPos) and (mode == Mode.RangeA) and raEntryOk and scoreGateOk(Mode.RangeA)
 rangeBEnter = false  // Strategy v1.0: Range-B is a NO-TRADE regime manager (value migration). It must resolve (to RA/Bull/Bear) or time-stop -> downgrade+log.
@@ -2457,8 +2471,8 @@ bool bullPBTouchOk =
      )
 
 // Final PB execution gate
-bool bullPBEnterExec = bullPBEnter and bullPBTouchOk and (not bullPBExhaustVeto)
-
+bool bullPBEnterExec =
+     bullPBEnter and bullPBTouchOk and (not bullPBExhaustVeto) and (not bullPBLateVeto)
 
 // --- PB-Guard v2 (exhaustion micro-PB filter) ---
 
