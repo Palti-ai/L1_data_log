@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v5.66 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v5.67 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -92,10 +92,11 @@ bullTrailBuf_ATR = input.float(0.10, "Bull runner: buffer under EMA (ATR*x)", gr
 bullTrailArm_ATR = input.float(0.80, "Bull runner: arm trail only after MFE >= ATR*x", group=grpBull, step=0.05)
 // --- Bull MOM_LOSS gating (Option B) ---
 bullMomLossOn              = input.bool(true,  "Bull MOM_LOSS: enable", group=grpBull)
-bullMomLossGateWeak        = input.bool(true,  "Bull MOM_LOSS: gate by weak context (Option B)", group=grpBull)
+bullMomLossGateWeak        = input.bool(false,  "Bull MOM_LOSS: gate by weak context (Option B)", group=grpBull)
 bullMomLossAllowHTFOff     = input.bool(true,  "MOM_LOSS allowed when HTF OFF", group=grpBull)
 bullMomLossAllowHTFNeutral = input.bool(true,  "MOM_LOSS allowed when HTF neutral", group=grpBull)
 bullMomLossAllowHTFFlipOff = input.bool(true,  "MOM_LOSS allowed on HTF_OFF flip bar", group=grpBull)
+bullMomLossAllowAfterEndBull = input.bool(true, "MOM_LOSS allowed after END_BULL (in-trade)", group=grpBull)
 bullAddOn           = input.bool(true,  "Bull ADD: enable continuation add-entry", group=grpBull)
 bullAddSpacingBars  = input.int(18,     "Bull ADD: min bars between adds", group=grpBull, minval=1)
 bullAddMaxExt_ATR   = input.float(1.40, "Bull ADD: block if extended > ATR*x above EMAfast", group=grpBull, step=0.05)
@@ -2927,7 +2928,8 @@ bool bullMomLossRaw =
 bool momLossWeakCtx =
      (bullMomLossAllowHTFOff     and (not htfTrendOk)) or
      (bullMomLossAllowHTFNeutral and htfNeutral) or
-     (bullMomLossAllowHTFFlipOff and (htfFlipEventNow == "HTF_OFF"))
+     (bullMomLossAllowHTFFlipOff and (htfFlipEventNow == "HTF_OFF")) or
+     (bullMomLossAllowAfterEndBull and (posTag == "BULL") and inPos and (not na(bullEndBar)) and (bar_index >= bullEndBar))
 
 // Final gated signal
 bool bullMomLoss =
