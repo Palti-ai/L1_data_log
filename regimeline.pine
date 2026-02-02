@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v5.62 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v5.63 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -781,6 +781,11 @@ fmtDT(_t) =>
 L1_markExit(_reason, _outcome, _regExit) =>
     [true, _reason, _outcome, _regExit]
 
+// Prefer TradingView "Signal" text (order comment). Fallback to id if comment is empty.
+sigOrId(_comment, _id) =>
+    string s = na(_comment) ? "" : _comment
+    s := str.trim(s)
+    s != "" ? s : _id
 
 
 //------------------------------
@@ -818,8 +823,16 @@ if exportToLogs and barstate.isconfirmed
             string dir    = sz >= 0 ? "LONG" : "SHORT"
 
             // Trade List IDs (best 1:1 identity you can get from Pine)
-            string tvEntryId = strategy.closedtrades.entry_id(k)
-            string tvExitId  = strategy.closedtrades.exit_id(k)
+            // Trade List identity + Signal (comment) — Signal is what TradingView shows in "List of trades"
+            string entryId  = strategy.closedtrades.entry_id(k)
+            string exitId   = strategy.closedtrades.exit_id(k)
+            string entryCmt = strategy.closedtrades.entry_comment(k)
+            string exitCmt  = strategy.closedtrades.exit_comment(k)
+
+            // Keep field names tvEntryId/tvExitId for CSV stability, but now they match TV "Signal" 1:1.
+            string tvEntryId = sigOrId(entryCmt, entryId)
+            string tvExitId  = sigOrId(exitCmt,  exitId)
+
 
             // Keep your field name, but make it explicit that it is TV's exit_id
             string exitReason = tvExitId
