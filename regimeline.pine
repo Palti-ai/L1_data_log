@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v5.74 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v5.75 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -78,6 +78,11 @@ bullStartMicroPB_ATR     = input.float(0.20, "Bull START: require micro pullback
 bullStartNoChaseMax_ATR  = input.float(0.80, "Bull START: max distance above bullLevel (ATR)",    group=grpBull, step=0.05)
 bullNeedLocalTrend = input.bool(true, "Bull: require local EMA trend (fast>slow + rising)", group=grpBull)
 bullEmaSlopeBars   = input.int(3, "Bull: EMA slope bars", group=grpBull, minval=1)
+
+// --- PB guard (prevents late/chase PB entries) ---
+bullPBMaxAbove_ATR      = input.float(0.05, "Bull PB: max close above bullLevel (ATR)", group=grpBull, step=0.05)
+bullPBMaxBarsSinceAccept = input.int(1, "Bull PB: max bars since accept-up", group=grpBull, minval=1)
+bullPBRequireTouchEF    = input.bool(true, "Bull PB: require pullback touch EMAfast or bullLevel", group=grpBull)
 
 // --- Bull Acceptance-Compression entry (no PB) ---
 bullCompOn = input.bool(true, "Bull COMP: enable acceptance-compression entry", group=grpBull)
@@ -2413,6 +2418,16 @@ if rbShortEnter
     rbSPBSeen := false
     rbSPBBar  := na
 
+// --- PB final guards (apply at execution, regardless of how bullPBEnter is computed) ---
+int bullPBBarsSinceAccept = l2_barsSince(l2_lastAcceptBar)
+bool bullPBWindowOk = (bullPBBarsSinceAccept >= 0) and (bullPBBarsSinceAccept <= bullPBMaxBarsSinceAccept)
+
+bool bullPBNotChaseOk = not na(bullLevel) and (atr > 0) and ((close - bullLevel) <= (atr * bullPBMaxAbove_ATR))
+
+bool bullPBTouchOk = (not bullPBRequireTouchEF) or (low <= emaFast) or (not na(bullLevel) and low <= bullLevel)
+
+// Final PB execution gate
+bool bullPBEnterExec = bullPBEnter and bullPBWindowOk and bullPBNotChaseOk and bullPBTouchOk
 
 if bullPBEnter
     strategy.entry("LONG", strategy.long, comment="BULL_PB")
