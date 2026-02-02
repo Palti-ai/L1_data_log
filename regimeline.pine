@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v5.75 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v5.78 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -80,9 +80,11 @@ bullNeedLocalTrend = input.bool(true, "Bull: require local EMA trend (fast>slow 
 bullEmaSlopeBars   = input.int(3, "Bull: EMA slope bars", group=grpBull, minval=1)
 
 // --- PB guard (prevents late/chase PB entries) ---
-bullPBMaxAbove_ATR      = input.float(0.05, "Bull PB: max close above bullLevel (ATR)", group=grpBull, step=0.05)
-bullPBMaxBarsSinceAccept = input.int(1, "Bull PB: max bars since accept-up", group=grpBull, minval=1)
+bullPBMaxAbove_ATR      = input.float(0.80, "Bull PB: max close above bullLevel (ATR)", group=grpBull, step=0.05)
+bullPBMaxBarsSinceAccept = input.int(24, "Bull PB: max bars since accept-up", group=grpBull, minval=1)
 bullPBRequireTouchEF    = input.bool(true, "Bull PB: require pullback touch EMAfast or bullLevel", group=grpBull)
+bullPBMaxExtAboveEma_ATR = input.float(1.40, "Bull PB: max extension above EMAfast (ATR) to allow PB", group=grpBull, step=0.05)
+bullPBMinPullback_ATR    = input.float(0.60, "Bull PB: min pullback depth from trade high (ATR)", group=grpBull, step=0.05)
 
 // --- Bull Acceptance-Compression entry (no PB) ---
 bullCompOn = input.bool(true, "Bull COMP: enable acceptance-compression entry", group=grpBull)
@@ -2418,18 +2420,36 @@ if rbShortEnter
     rbSPBSeen := false
     rbSPBBar  := na
 
-// --- PB final guards (apply at execution, regardless of how bullPBEnter is computed) ---
-int bullPBBarsSinceAccept = l2_barsSince(l2_lastAcceptBar)
-bool bullPBWindowOk = (bullPBBarsSinceAccept >= 0) and (bullPBBarsSinceAccept <= bullPBMaxBarsSinceAccept)
+// --- PB-Guard v2 (exhaustion micro-PB filter) ---
 
-bool bullPBNotChaseOk = not na(bullLevel) and (atr > 0) and ((close - bullLevel) <= (atr * bullPBMaxAbove_ATR))
+// Always-evaluated rolling high (for non-inPos depth calc)
+float bullRecentHigh24 = ta.highest(high, 24)
 
-bool bullPBTouchOk = (not bullPBRequireTouchEF) or (low <= emaFast) or (not na(bullLevel) and low <= bullLevel)
+// 1) Extension filter: don't PB-buy when far above EMAfast
+bool bullPBExtOk = (close - emaFast) <= (atr * bullPBMaxExtAboveEma_ATR)
+
+// 2) Depth filter: require a real pullback from recent high
+float bullPBDepth =
+     (inPos and isLong and posTag=="BULL")
+         ? (tradeHi - low)
+         : (bullRecentHigh24 - low)
+
+bool bullPBDepthOk = bullPBDepth >= (atr * bullPBMinPullback_ATR)
+
+// 3) Touch + reclaim (recommended)
+bool bullPBTouchOk =
+     (not bullPBRequireTouchEF) or
+     ((low <= emaFast) and (close > emaFast)) or
+     (not na(bullLevel) and (low <= bullLevel) and (close > bullLevel))
 
 // Final PB execution gate
-bool bullPBEnterExec = bullPBEnter and bullPBWindowOk and bullPBNotChaseOk and bullPBTouchOk
+bool bullPBEnterExec = bullPBEnter and bullPBTouchOk and bullPBExtOk and bullPBDepthOk
 
-if bullPBEnter
+
+// --- PB-Guard v2 (exhaustion micro-PB filter) ---
+
+
+if bullPBEnterExec
     strategy.entry("LONG", strategy.long, comment="BULL_PB")
 
     // ---- END BULL on entry consumption (STRUCTURE-ANCHORED) ----
