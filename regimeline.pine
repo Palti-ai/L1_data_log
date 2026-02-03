@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v5.92 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v5.99 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -566,6 +566,10 @@ var int bullNoNewHiStreak = 0
 var int bullLastAddBar = na
 var float bullAddRefHi = na   // last add/entry reference high-water mark
 var float bullHH = na
+var int   bullHHBar = na
+var float bullArmRollHigh = na   // Option C: rollHigh snapshot at arm (accept-up)
+
+
 
 float bullTrailLevel = na
 // --- Bull impulse entry one-shot latch ---
@@ -1106,6 +1110,9 @@ if bearAcceptOk
     bullStructLow  := na
     bullLevel      := na
     bullHH := na
+    bullArmRollHigh := na
+    bullHHBar := na
+
 
     // Also clear Bull label anchors so they cannot print inside Bear
     bullStartBar := na
@@ -1217,7 +1224,9 @@ bullAcceptUp = pendingBull and not na(bullLevel) and (close > bullLevel) and (no
 if bullAcceptUp
     bullArmed       := true
     bullArmedBar    := bar_index
+    bullArmRollHigh := rollHigh
     bullHH := high
+    bullHHBar := na
     pendingBull     := false
     pendingBullBar  := na
     lastBullFlipType := "START_BULL"
@@ -1328,15 +1337,20 @@ if bullLostAcceptance
     pendingBull  := false
     pendingBullBar := na
     bullHH := na
+    bullArmRollHigh := na
+    bullHHBar := na
+
 
 
 // Retest-that-holds detection (only after arming)
 // STRICT: require price was ABOVE the retest zone on the prior bar (optional),
 // then dips into the zone (pullback), and closes holding the level.
 if bullArmed and (not inPos)
-    // Track highest high after accept-up (structure proof for PB eligibility)
-    if barstate.isconfirmed
-        bullHH := na(bullHH) ? high : math.max(bullHH, high)
+    // Track highest high AFTER accept-up bar (real structure proof)
+    if barstate.isconfirmed and (not na(bullArmedBar)) and (bar_index > bullArmedBar)
+        if na(bullHH) or (high > bullHH)
+            bullHH := high
+            bullHHBar := bar_index
 
     bool wasAboveZone = not na(bullLevel) and (high[1] > bullLevel + atr * bullPB_ATR)
     bool fromAboveOk  = (not bullPBRequireFromAbove) or wasAboveZone
@@ -1388,6 +1402,9 @@ if bullSetupExpired
     bullLevel     := na
     bullStructLow := na
     bullHH := na
+    bullArmRollHigh := na
+    bullHHBar := na
+
 
 
 // Reclaim entry (after PBSeen) with hold
@@ -2541,7 +2558,7 @@ bool bullPBTouchOk =
 
 // Final PB execution gate
 // Option A: structural HH proof (must exceed reclaimed range high = bullLevel)
-bool bullPB_HHProofOk = bullArmed and (not na(bullLevel)) and (not na(bullHH)) and (bullHH > bullLevel)
+bool bullPB_HHProofOk = bullArmed and (not na(bullArmRollHigh)) and (not na(bullHH)) and (bullHH > bullArmRollHigh)
 
 // Final PB execution gate
 bool bullPBEnterExec = bullPBEnter and bullPBTouchOk and bullPB_HHProofOk and (not bullPBExhaustVeto) and (not bullPBLateVeto) and (not bullPBLifecycleVeto) and (not bullPBLateStallVeto) and (not bullPBAgeVeto)
@@ -2569,6 +2586,9 @@ if barstate.isconfirmed and (not inPos) and bullPB_DisallowedByHH
     bullStructLow := na
     bullLevel := na
     bullHH := na
+    bullArmRollHigh := na
+    bullHHBar := na
+
 
     // Force Range-B immediately
     rbFromPBBlock := true
@@ -2667,6 +2687,9 @@ if bullPBEnterExec
     bullPBLow := na
     bullLastAddBar := na
     bullHH := na
+    bullArmRollHigh := na
+    bullHHBar := na
+
 
 else if bullCompEnter
     strategy.entry("LONG", strategy.long, comment="BULL_COMP")
@@ -2719,6 +2742,9 @@ else if bullCompEnter
     bullPBLow := na
     bullLastAddBar := na
     bullHH := na
+    bullArmRollHigh := na
+    bullHHBar := na
+
 
 else if bullImpulseEnter
     strategy.entry("LONG", strategy.long, comment="BULL_START")
@@ -2772,6 +2798,9 @@ else if bullImpulseEnter
     bullPBLow := na
     bullLastAddBar := na
     bullHH := na
+    bullArmRollHigh := na
+    bullHHBar := na
+
 
 
     // keep bullStructLow for invalidation
