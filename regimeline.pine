@@ -1225,7 +1225,7 @@ if bullAcceptUp
     bullArmed       := true
     bullArmedBar    := bar_index
     bullArmRollHigh := rollHigh
-    bullHH := high
+    bullHH := na
     bullHHBar := na
     pendingBull     := false
     pendingBullBar  := na
