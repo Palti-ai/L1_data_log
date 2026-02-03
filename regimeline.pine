@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v5.90 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v5.92 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -542,6 +542,8 @@ var int   lastRBShortExitBar = na
 var bool rbSPBSeen = false
 var int  rbSPBBar  = na
 var float rbSValue = na
+var bool rbFromPBBlock = false
+
 
 // ---- Bull acceptance-up (armed -> retest -> reclaim)
 var bool  pendingBull   = false
@@ -563,6 +565,7 @@ var bool bullTP1Done = false
 var int bullNoNewHiStreak = 0
 var int bullLastAddBar = na
 var float bullAddRefHi = na   // last add/entry reference high-water mark
+var float bullHH = na
 
 float bullTrailLevel = na
 // --- Bull impulse entry one-shot latch ---
@@ -1102,6 +1105,7 @@ if bearAcceptOk
     bullPBLow      := na
     bullStructLow  := na
     bullLevel      := na
+    bullHH := na
 
     // Also clear Bull label anchors so they cannot print inside Bear
     bullStartBar := na
@@ -1198,6 +1202,8 @@ if (not inPos) and (not pendingBull) and (not bullArmed) and crossUp and (not be
     pendingBull    := true
     pendingBullBar := bar_index
     bullLevel      := rollHigh
+    // ---- Bull HH tracker (since START_BULL / accept-up) ----
+
 
 // --- PB-Count (per bull leg) ---
 var int bullPBCount = 0
@@ -1211,10 +1217,13 @@ bullAcceptUp = pendingBull and not na(bullLevel) and (close > bullLevel) and (no
 if bullAcceptUp
     bullArmed       := true
     bullArmedBar    := bar_index
+    bullHH := high
     pendingBull     := false
     pendingBullBar  := na
     lastBullFlipType := "START_BULL"
     bullPBCount := 0
+    rbFromPBBlock := false
+
 
 
     // ---- BULL label anchor (STRUCTURE) ----
@@ -1318,14 +1327,17 @@ if bullLostAcceptance
     bullLevel    := na
     pendingBull  := false
     pendingBullBar := na
-
-
+    bullHH := na
 
 
 // Retest-that-holds detection (only after arming)
 // STRICT: require price was ABOVE the retest zone on the prior bar (optional),
 // then dips into the zone (pullback), and closes holding the level.
 if bullArmed and (not inPos)
+    // Track highest high after accept-up (structure proof for PB eligibility)
+    if barstate.isconfirmed
+        bullHH := na(bullHH) ? high : math.max(bullHH, high)
+
     bool wasAboveZone = not na(bullLevel) and (high[1] > bullLevel + atr * bullPB_ATR)
     bool fromAboveOk  = (not bullPBRequireFromAbove) or wasAboveZone
 
@@ -1375,6 +1387,8 @@ if bullSetupExpired
     bullPBLow     := na
     bullLevel     := na
     bullStructLow := na
+    bullHH := na
+
 
 // Reclaim entry (after PBSeen) with hold
 if bullPBSeen and (not inPos)
@@ -2526,13 +2540,41 @@ bool bullPBTouchOk =
      )
 
 // Final PB execution gate
-bool bullPBEnterExec =
-     bullPBEnter and bullPBTouchOk and
-     (not bullPBExhaustVeto) and
-     (not bullPBLateVeto) and
-     (not bullPBLifecycleVeto) and
-     (not bullPBLateStallVeto) and
-     (not bullPBAgeVeto)
+// Option A: structural HH proof (must exceed reclaimed range high = bullLevel)
+bool bullPB_HHProofOk = bullArmed and (not na(bullLevel)) and (not na(bullHH)) and (bullHH > bullLevel)
+
+// Final PB execution gate
+bool bullPBEnterExec = bullPBEnter and bullPBTouchOk and bullPB_HHProofOk and (not bullPBExhaustVeto) and (not bullPBLateVeto) and (not bullPBLifecycleVeto) and (not bullPBLateStallVeto) and (not bullPBAgeVeto)
+
+// If PB is disallowed specifically by HH proof, immediately treat it as re-anchoring (Range-B)
+bool bullPB_DisallowedByHH = bullPBEnter and (not bullPB_HHProofOk)
+
+if barstate.isconfirmed and (not inPos) and bullPB_DisallowedByHH
+    // Stamp END_BULL (structure) and clear Bull setup
+    bullEndBar := bar_index
+    bullEndY := high + lblPadUp
+    lastBullFlipType := "END_BULL"
+
+    bullLegHi := na
+    bullLegNoNewHiStreak := 0
+    bullPBCount := 0
+
+    pendingBull := false
+    pendingBullBar := na
+    bullArmed := false
+    bullArmedBar := na
+    bullPBSeen := false
+    bullPBBar := na
+    bullPBLow := na
+    bullStructLow := na
+    bullLevel := na
+    bullHH := na
+
+    // Force Range-B immediately
+    rbFromPBBlock := true
+    forcedMode := Mode.RangeB
+    forcedUntilBar := bar_index + downgradeBars
+
 
 // ==============================
 // PBDBG: log PB candidates (EXEC + optional BLOCK) to Pine Logs
@@ -2579,6 +2621,7 @@ if bullPBEnterExec
     // ---- END BULL on entry consumption (STRUCTURE-ANCHORED) ----
     posTag := "BULL"
     entryModeTag := "BULL"
+    rbFromPBBlock := false
     L1_pendDir  := "LONG"
     L1_pendReg  := "BULL"
     L1_pendArch := "BULL_PB_RECLAIM"
@@ -2623,12 +2666,14 @@ if bullPBEnterExec
     bullPBBar := na
     bullPBLow := na
     bullLastAddBar := na
+    bullHH := na
 
 else if bullCompEnter
     strategy.entry("LONG", strategy.long, comment="BULL_COMP")
 
     posTag := "BULL"
     entryModeTag := "BULL"
+    rbFromPBBlock := false
     L1_pendDir  := "LONG"
     L1_pendReg  := "BULL"
     L1_pendArch := "BULL_COMP"
@@ -2673,12 +2718,14 @@ else if bullCompEnter
     bullPBBar := na
     bullPBLow := na
     bullLastAddBar := na
+    bullHH := na
 
 else if bullImpulseEnter
     strategy.entry("LONG", strategy.long, comment="BULL_START")
 
     posTag := "BULL"
     entryModeTag := "BULL"
+    rbFromPBBlock := false
     L1_pendDir  := "LONG"
     L1_pendReg  := "BULL"
     L1_pendArch := "BULL_START"
@@ -2724,6 +2771,7 @@ else if bullImpulseEnter
     bullPBBar := na
     bullPBLow := na
     bullLastAddBar := na
+    bullHH := na
 
 
     // keep bullStructLow for invalidation
@@ -2764,6 +2812,7 @@ if rangeAEnter
     strategy.entry("LONG", strategy.long, comment="RANGE_A")
     posTag := "RANGEA"
     entryModeTag := "RANGE-A"
+    rbFromPBBlock := false
     L1_pendDir  := "LONG"
     L1_pendReg  := "RANGE-A"
     L1_pendArch := "RA_DISCOUNT_RECLAIM"
