@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v5.88 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v5.90 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -93,7 +93,7 @@ bullPBLateAgeBars        = input.int(72,  "Bull PB: late-lifecycle age (bars sin
 bullPBLateMaxAbove_ATR   = input.float(1.05, "Bull PB: late veto if close above bullLevel > ATR", group=grpBull, step=0.05)
 bullPBLateMinDepth_ATR   = input.float(1.05, "Bull PB: late veto if PB depth < ATR", group=grpBull, step=0.05)
 bullPBMaxAgeBars = input.int(
-    120,
+    24,
     "Bull PB: max bars since START_BULL",
     group = grpBull,
     minval = 24,
@@ -823,7 +823,8 @@ if exportToLogs and dbgPBProbe and barstate.isfirst
       "distBullATR,distEFAtr," +
       "pbAgeBars,bullLegNoNewHiStreak,pbDepthATR," +
       "pbExtended,pbShallow,pbExhaustVeto,pbLateStallVeto,pbLifecycleVeto,pbTouchOk," +
-      "bullPBEnter,bullPBEnterExec"
+      "bullPBEnter,bullPBEnterExec," +
+      "bullStartBar,bullPBMaxAgeBars,pbAgeVeto,modeNow,bullArmedNow"
     )
 
 
@@ -2543,28 +2544,30 @@ if exportToLogs and dbgPBProbe and barstate.isconfirmed and bullPBEnter and (dbg
     float distEFAtr   = (atr > 0) ? ((close - emaFast) / atr) : na
     float pbDepthATR  = (atr > 0) ? (bullPBDepth / atr) : na
 
-    log.info(str.format(
-      "PBDBG,{0},{1},{2},{3}," +
-      "{4},{5},{6},{7}," +
-      "{8},{9},{10},{11}," +
-      "{12},{13}," +
-      "{14},{15},{16}," +
-      "{17},{18},{19},{20},{21},{22}," +
-      "{23},{24}",
-      L1_runId, L1_tf, L1_scriptVer, syminfo.ticker,
-      pbStatus, bar_index, fmtDT(time), time,
-      close, atr, bullLevel, emaFast,
-      distBullATR, distEFAtr,
-      bullPBAgeBars, bullLegNoNewHiStreak, pbDepthATR,
-      (bullPBExtended ? 1 : 0),
-      (bullPBShallow ? 1 : 0),
-      (bullPBExhaustVeto ? 1 : 0),
-      (bullPBLateStallVeto ? 1 : 0),
-      (bullPBLifecycleVeto ? 1 : 0),
-      (bullPBTouchOk ? 1 : 0),
-      1, // bullPBEnter
-      (bullPBEnterExec ? 1 : 0)
-    ))
+    log.info(
+    "PBDBG," +
+    syminfo.ticker + "," +
+    str.tostring(bar_index) + "," +
+    fmtDT(time) + "," +
+    str.tostring(time) + "," +
+    str.tostring(bullPBAgeBars) + "," +
+    str.tostring(bullLegNoNewHiStreak) + "," +
+    str.tostring(bullPBDepth / atr) + "," +
+    str.tostring(bullPBExtended ? 1 : 0) + "," +
+    str.tostring(bullPBShallow ? 1 : 0) + "," +
+    str.tostring(bullPBExhaustVeto ? 1 : 0) + "," +
+    str.tostring(bullPBLateStallVeto ? 1 : 0) + "," +
+    str.tostring(bullPBLifecycleVeto ? 1 : 0) + "," +
+    str.tostring(bullPBAgeVeto ? 1 : 0) + "," +
+    str.tostring(bullPBTouchOk ? 1 : 0) + "," +
+    str.tostring(bullPBEnter ? 1 : 0) + "," +
+    str.tostring(bullPBEnterExec ? 1 : 0) + "," +
+    str.tostring(bullStartBar) + "," +
+    str.tostring(bullPBMaxAgeBars) + "," +
+    str.tostring(mode == Mode.Bull ? 1 : 0) + "," +
+    str.tostring(bullArmed ? 1 : 0)
+)
+
 
 
 // --- PB-Guard v2 (exhaustion micro-PB filter) ---
