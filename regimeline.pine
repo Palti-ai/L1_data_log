@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v5.100 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v5.101 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -2094,6 +2094,23 @@ var array<int>   l2_bsr  = array.new_int()
 var array<string> l2_mode = array.new_string()
 var array<int>    l2_msc  = array.new_int()
 
+// ---- NEW: extra L2 fields (per-bar) ----
+var array<float> l2_emaF  = array.new_float()
+var array<float> l2_emaS  = array.new_float()
+var array<float> l2_decL  = array.new_float()
+var array<float> l2_decH  = array.new_float()
+var array<float> l2_decM  = array.new_float()
+
+var array<int> l2_htfOn = array.new_int()
+var array<int> l2_htfNe = array.new_int()
+
+var array<int> l2_sb = array.new_int()   // START_BULL event on this bar
+var array<int> l2_eb = array.new_int()   // END_BULL event on this bar
+
+var array<float> l2_adx  = array.new_float()
+var array<float> l2_adxS = array.new_float()
+
+
 // Keep size capped (past window only)
 l2_cap = l2WindowBars
 
@@ -2205,6 +2222,30 @@ l2_pushBar() =>
     array.push(l2_mode, modeToStr(mode))
     array.push(l2_msc, l2_modeScoreNow)
 
+    // ---- NEW fields push ----
+    array.push(l2_emaF, emaFast)
+    array.push(l2_emaS, emaSlow)
+
+    array.push(l2_decL, decLow)
+    array.push(l2_decH, decHigh)
+    float _decMid = (decLow + decHigh) * 0.5
+    array.push(l2_decM, _decMid)
+
+    array.push(l2_htfOn, htfOnNow ? 1 : 0)
+    array.push(l2_htfNe, htfNeutral ? 1 : 0)
+
+    // START/END BULL flags (event on this bar)
+    bool _sbNow = bullAcceptUp
+    bool _ebNow = bullLostAcceptance
+    array.push(l2_sb, _sbNow ? 1 : 0)
+    array.push(l2_eb, _ebNow ? 1 : 0)
+
+    // ADX + slope (optional but cheap)
+    float _adxS = chgN(adx, adxSlopeBars)
+    array.push(l2_adx, adx)
+    array.push(l2_adxS, _adxS)
+
+
     // cap
     while array.size(l2_bi) > l2_cap
         array.shift(l2_bi)
@@ -2244,8 +2285,23 @@ l2_pushBar() =>
         array.shift(l2_mode)
         array.shift(l2_msc)
 
-if exportL2 and barstate.isconfirmed
-    l2_pushBar()
+        // ---- NEW fields shift ----
+        array.shift(l2_emaF)
+        array.shift(l2_emaS)
+
+        array.shift(l2_decL)
+        array.shift(l2_decH)
+        array.shift(l2_decM)
+
+        array.shift(l2_htfOn)
+        array.shift(l2_htfNe)
+
+        array.shift(l2_sb)
+        array.shift(l2_eb)
+
+        array.shift(l2_adx)
+        array.shift(l2_adxS)
+
 
 // ---- Active window state (one at a time) ----
 var int    L2_eventId      = 0
@@ -2265,18 +2321,21 @@ var bool l2HeaderDone = false
 
 if exportL2 and not l2HeaderDone and barstate.isconfirmed
     log.info(
-      "runId,tf,scriptVer,coin,eventId,evtType,evtBar,rel," +
-      "o,h,l,c,v,atrA,body,uw,lw,cloc,rngA," +
-      "dDec,dEF,dES,abv,blw,pbz,comp,ovc,vflag,rwid," +
-      "bsi,bsa,bsr,mode,msc,isEntry,isExit,exitReason,isCand,blkMask,posTag,posState"
+         "runId,tf,scriptVer,coin,eventId,evtType,evtBar,rel," +
+         "o,h,l,c,v,atrA,body,uw,lw,cloc,rngA," +
+         "dDec,dEF,dES,abv,blw,pbz,comp,ovc,vflag,rwid," +
+         "bsi,bsa,bsr,mode,msc," +
+         "emaFast,emaSlow,decLow,decHigh,decMid," +
+         "htfOn,htfNeutral,startBull,endBull," +
+         "adx,adxSlope," +
+         "isEntry,isExit,exitReason,isCand,blkMask,posTag,posState"
     )
-    l2HeaderDone := true
 
+
+l2HeaderDone := true
 
 // ---- Emit one row (from buffer index) ----
 l2_emitRow(_idx, _rel, _isEntry, _isExit, _exitReason, _isCand, _blkMask) =>
-
-    
 
     // sanitize string fields that may contain commas
     string coin     = l2_sanitize(syminfo.ticker)
@@ -2319,6 +2378,17 @@ l2_emitRow(_idx, _rel, _isEntry, _isExit, _exitReason, _isCand, _blkMask) =>
       str.tostring(array.get(l2_bsr, _idx)) + "," +
       modeS + "," +
       str.tostring(array.get(l2_msc, _idx)) + "," +
+      str.tostring(array.get(l2_emaF, _idx)) + "," +
+      str.tostring(array.get(l2_emaS, _idx)) + "," +
+      str.tostring(array.get(l2_decL, _idx)) + "," +
+      str.tostring(array.get(l2_decH, _idx)) + "," +
+      str.tostring(array.get(l2_decM, _idx)) + "," +
+      str.tostring(array.get(l2_htfOn, _idx)) + "," +
+      str.tostring(array.get(l2_htfNe, _idx)) + "," +
+      str.tostring(array.get(l2_sb, _idx)) + "," +
+      str.tostring(array.get(l2_eb, _idx)) + "," +
+      str.tostring(array.get(l2_adx, _idx)) + "," +
+      str.tostring(array.get(l2_adxS, _idx)) + "," +
       str.tostring(_isEntry ? 1 : 0) + "," +
       str.tostring(_isExit  ? 1 : 0) + "," +
       exitR + "," +
@@ -2327,8 +2397,6 @@ l2_emitRow(_idx, _rel, _isEntry, _isExit, _exitReason, _isCand, _blkMask) =>
       tagS + "," +
       posStS
     )
-
-
 
 
 // ---- Forward emission (next +N bars) ----
@@ -3045,6 +3113,11 @@ bearBlkMask += ((not bearShortADXOk) ? BLK_ADX : 0)
 bearBlkMask += ((not bearReentryOk) ? BLK_SPACING : 0)
 bearBlkMask += ((not shortCooldownOk) ? BLK_HTF : 0)
 bearBlkMask += ((not bearLocalDowntrendOk) ? BLK_OTHER : 0)
+
+// ---- L2: push one snapshot per confirmed bar (must run before any L2 emits/backfills) ----
+if exportL2 and barstate.isconfirmed
+    l2_pushBar()
+
 
 // ---- L2 window log: CANDIDATES (missed opportunities) ----
 if exportL2 and barstate.isconfirmed and (not inPos)
