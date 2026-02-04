@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v5.99 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v5.100 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -99,6 +99,14 @@ bullPBMaxAgeBars = input.int(
     minval = 24,
     maxval = 500
 )
+
+// --- PB stall-cluster scoring + veto (NEW) ---
+bullPB_MinScore = input.int(1, "Bull PB: min score (stall score)", group=grpBull, minval=0, maxval=1)
+
+bullPBStallLookback     = input.int(8,  "Bull PB: stall lookback bars",        group=grpBull, minval=3, maxval=20)
+bullPBStallMinCount     = input.int(5,  "Bull PB: stall min bars (cluster)",   group=grpBull, minval=2, maxval=20)
+bullPBStallBodyATR      = input.float(0.25, "Bull PB: stall body <= x * ATR",  group=grpBull, step=0.05, minval=0.05, maxval=1.0)
+bullPBStallNeedHighFail = input.bool(true, "Bull PB: stall requires HH progress fail", group=grpBull)
 
 // --- Bull Acceptance-Compression entry (no PB) ---
 bullCompOn = input.bool(true, "Bull COMP: enable acceptance-compression entry", group=grpBull)
@@ -2556,6 +2564,29 @@ bool bullPBTouchOk =
           ( (low <= emaFast) or (not na(bullLevel) and low <= bullLevel) )
      )
 
+float pbHighMax    = ta.highest(high, bullPBStallLookback)
+float pbHighMaxPrev = pbHighMax[1]
+
+// ================================
+// PB stall-cluster detection + score (NEW)
+// ================================
+int pbStallCount = 0
+for i = 0 to bullPBStallLookback - 1
+    bool pbStallBar = math.abs(close[i] - open[i]) <= (bullPBStallBodyATR * atr)
+    pbStallCount += pbStallBar ? 1 : 0
+
+bool pbHighFail =
+     (not bullPBStallNeedHighFail) or
+     (pbHighMax <= pbHighMaxPrev)
+
+bool bullPBStallCluster = (pbStallCount >= bullPBStallMinCount) and pbHighFail
+
+// Hard veto (PB only)
+bool bullPBStallVeto = bullPBStallCluster
+
+// Score point: +1 if stall cluster is NOT present
+int bullPBScore = bullPBStallCluster ? 0 : 1
+
 // Final PB execution gate
 // Option A: structural HH proof (must exceed reclaimed range high = bullLevel)
 bool bullPB_HHProofOk =
@@ -2570,6 +2601,8 @@ bool bullPBEnterExec =
      bullPBEnter and
      bullPBTouchOk and
      bullPB_HHProofOk and
+     (bullPBScore >= bullPB_MinScore) and
+     (not bullPBStallVeto) and
      (not bullPBExhaustVeto) and
      (not bullPBLateVeto) and
      (not bullPBLifecycleVeto) and
@@ -2617,6 +2650,16 @@ if exportToLogs and dbgPBProbe and barstate.isconfirmed and bullPBEnter and (dbg
 
 if bullPBEnterExec
     strategy.entry("LONG", strategy.long, comment="BULL_PB")
+    label.new(
+        bar_index,
+        high,
+        "stallCnt=" + str.tostring(pbStallCount) + 
+        " highFail=" + str.tostring(pbHighFail),
+        style=label.style_label_down,
+        textcolor=color.white,
+        color=color.red,
+        size=size.small
+    )
 
     // ---- END BULL on entry consumption (STRUCTURE-ANCHORED) ----
     posTag := "BULL"
