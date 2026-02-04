@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v5.99 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v5.100 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -69,7 +69,7 @@ bullTS_MinMFE_ATR = input.float(0.30, "Time-stop only if MFE < ATR*x", group=grp
 bullInvNeed2Cl   = input.bool(true,  "Bull invalidation: require 2 closes below bullLevel", group=grpBull)
 bullInvBuf_ATR   = input.float(0.10, "Bull invalidation buffer under bullLevel (ATR*x)",   group=grpBull, step=0.05)
 bullTP1_ATR      = input.float(1.97, "Bull TP1 (ATR*x) — partial", group=grpBull, step=0.25)
-bullTP1_Pct      = input.int(99, "Bull TP1 % to close", group=grpBull, minval=1, maxval=99)
+bullTP1_Pct      = input.int(99, "Bull TP1 % to close", group=grpBull, minval=1, maxval=100)
 bullUseDMI = input.bool(false, "Bull entry: require +DI > -DI", group=grpBull)
 bullAcceptNeed2Cl      = input.bool(true,  "Bull accept-up requires 2 closes", group=grpBull)
 bullPBRequireFromAbove = input.bool(true,  "Bull PB: require pullback from above zone", group=grpBull)
@@ -99,6 +99,13 @@ bullPBMaxAgeBars = input.int(
     minval = 24,
     maxval = 500
 )
+// --- PB stall-cluster filter (PB quality + veto) ---
+bullPB_StallLookback  = input.int(8,  "Bull PB: stall lookback bars", group=grpBullPB, minval=3, maxval=20)
+bullPB_StallMinCount  = input.int(5,  "Bull PB: stall min bars (cluster)", group=grpBullPB, minval=2, maxval=20)
+bullPB_StallBodyATR   = input.float(0.25, "Bull PB: stall body <= x * ATR", group=grpBullPB, step=0.05, minval=0.05, maxval=1.0)
+bullPB_StallNeedHighFail = input.bool(true, "Bull PB: stall requires 'failed HH progress'", group=grpBullPB)
+bullPB_MinScore          = input.int(1, "Bull PB: minimum quality score", minval=0, maxval=4)
+
 
 // --- Bull Acceptance-Compression entry (no PB) ---
 bullCompOn = input.bool(true, "Bull COMP: enable acceptance-compression entry", group=grpBull)
@@ -834,6 +841,11 @@ if exportToLogs and dbgPBProbe and barstate.isfirst
       "bullStartBar,bullPBMaxAgeBars,pbAgeVeto,modeNow,bullArmedNow"
     )
 
+// ================================
+// Helper: stall bar detector (TOP-LEVEL ONLY)
+// ================================
+bool pbIsStallBar(float o, float c, float atr, float bodyATR) =>
+    math.abs(c - o) <= (bodyATR * atr)
 
 
 // Helper: safe datetime formatting (Pine v6)
@@ -2556,44 +2568,68 @@ bool bullPBTouchOk =
           ( (low <= emaFast) or (not na(bullLevel) and low <= bullLevel) )
      )
 
-// Final PB execution gate
-// Option A: structural HH proof (must exceed reclaimed range high = bullLevel)
-bool bullPB_HHProofOk = bullArmed and (not na(bullArmRollHigh)) and (not na(bullHH)) and (bullHH > bullArmRollHigh)
+
+// ================================
+// PB stall-cluster detection (price-structure)
+// ================================
+
+int pbStallCount = 0
+for i = 0 to bullPB_StallLookback - 1
+    bool _stall =
+         math.abs(close[i] - open[i]) <= (bullPB_StallBodyATR * atr)
+    pbStallCount += _stall ? 1 : 0
+
+bool pbHighFail =
+     (not bullPB_StallNeedHighFail) or
+     (ta.highest(high, bullPB_StallLookback) <= ta.highest(high, bullPB_StallLookback)[1])
+
+bool bullPB_StallCluster = (pbStallCount >= bullPB_StallMinCount) and pbHighFail
+
+bool bullPBStallVeto = bullPB_StallCluster
+bool pbScore_StallOk = not bullPB_StallCluster
+int  bullPBScore     = pbScore_StallOk ? 1 : 0
+
+
+// ================================
+// PB stall-cluster detection (price-structure)
+// ================================
+float _atr = atr  // use your existing ATR variable name (most code uses `atr`)
+
+
+bool _pbIsStallBar(int i) =>
+    math.abs(close[i] - open[i]) <= (bullPB_StallBodyATR * _pbAtr)
+
+int _pbStallCount = 0
+for i = 0 to bullPB_StallLookback - 1
+    _pbStallCount += _pbIsStallBar(i) ? 1 : 0
+
+bool _pbHighFail =
+     (not bullPB_StallNeedHighFail) ? true :
+     (ta.highest(high, bullPB_StallLookback) <= ta.highest(high, bullPB_StallLookback)[1])
+
+bool bullPB_StallCluster = (_pbStallCount >= bullPB_StallMinCount) and _pbHighFail
+
+// HARD VETO: PB blocked if stall cluster detected
+bool bullPBStallVeto = bullPB_StallCluster
+
+// SCORE POINT: +1 if stall cluster is NOT present
+bool pbScore_StallOk = not bullPB_StallCluster
+
+int bullPBScore = (pbScore_StallOk ? 1 : 0)
+
 
 // Final PB execution gate
-bool bullPBEnterExec = bullPBEnter and bullPBTouchOk and bullPB_HHProofOk and (not bullPBExhaustVeto) and (not bullPBLateVeto) and (not bullPBLifecycleVeto) and (not bullPBLateStallVeto) and (not bullPBAgeVeto)
-
-// If PB is disallowed specifically by HH proof, immediately treat it as re-anchoring (Range-B)
-bool bullPB_DisallowedByHH = bullPBEnter and (not bullPB_HHProofOk)
-
-if barstate.isconfirmed and (not inPos) and bullPB_DisallowedByHH
-    // Stamp END_BULL (structure) and clear Bull setup
-    bullEndBar := bar_index
-    bullEndY := high + lblPadUp
-    lastBullFlipType := "END_BULL"
-
-    bullLegHi := na
-    bullLegNoNewHiStreak := 0
-    bullPBCount := 0
-
-    pendingBull := false
-    pendingBullBar := na
-    bullArmed := false
-    bullArmedBar := na
-    bullPBSeen := false
-    bullPBBar := na
-    bullPBLow := na
-    bullStructLow := na
-    bullLevel := na
-    bullHH := na
-    bullArmRollHigh := na
-    bullHHBar := na
-
-
-    // Force Range-B immediately
-    rbFromPBBlock := true
-    forcedMode := Mode.RangeB
-    forcedUntilBar := bar_index + downgradeBars
+bool bullPBEnterExec =
+     bullPBEnter and
+     bullPBTouchOk and
+     bullPB_HHProofOk and
+     (bullPBScore >= bullPB_MinScore) and
+     (not bullPBStallVeto) and
+     (not bullPBExhaustVeto) and
+     (not bullPBLateVeto) and
+     (not bullPBLifecycleVeto) and
+     (not bullPBLateStallVeto) and
+     (not bullPBAgeVeto)
 
 
 // ==============================
