@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v5.107 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v5.109 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -581,7 +581,8 @@ var float bullHH = na
 var int   bullHHBar = na
 var float bullArmRollHigh = na   // Option C: rollHigh snapshot at arm (accept-up)
 
-
+// --- PB Freshness state ---
+var int bullLastMajorImpulseBar = na
 
 float bullTrailLevel = na
 // --- Bull impulse entry one-shot latch ---
@@ -2179,138 +2180,134 @@ l2_barsSince(_bar) =>
 
 // ---- Update rolling buffers ON CONFIRMED bars ----
 l2_pushBar_impl() =>
-    // wick %s
-    float _rng = math.max(high - low, syminfo.mintick)
-    float _body = math.abs(close - open) / _rng
-    float _uw = (high - math.max(open, close)) / _rng
-    float _lw = (math.min(open, close) - low) / _rng
-
-    // distances in ATR
-    float _dEF = atr > 0 ? math.abs(close - emaFast) / atr : na
-    float _dES = atr > 0 ? math.abs(close - emaSlow) / atr : na
-
-    // push all
-    array.push(l2_bi, bar_index)
-    array.push(l2_t, time)
-
-    array.push(l2_o, open)
-    array.push(l2_h, high)
-    array.push(l2_l, low)
-    array.push(l2_c, close)
-    array.push(l2_v, volume)
-
-    array.push(l2_atrA, atr)
-    array.push(l2_body, _body)
-    array.push(l2_uw, _uw)
-    array.push(l2_lw, _lw)
-    array.push(l2_cloc, closeLoc)
-    array.push(l2_rngA, (atr > 0) ? (_rng / atr) : na)
-
-    array.push(l2_dDec, l2_distDecATR)
-    array.push(l2_dEF, _dEF)
-    array.push(l2_dES, _dES)
-
-    array.push(l2_abv, l2_aboveDec)
-    array.push(l2_blw, l2_belowDec)
-
-    array.push(l2_pbz, l2_inPBZone)
-    array.push(l2_comp, l2_inCompression)
-    array.push(l2_ovc, l2_overlapCnt)
-
-    array.push(l2_vflag, l2_volFlag)
-    array.push(l2_rwid, l2_rangeWidthATR)
-
-    array.push(l2_bsi, l2_barsSince(l2_lastImpulseBar))
-    array.push(l2_bsa, l2_barsSince(l2_lastAcceptBar))
-    array.push(l2_bsr, l2_barsSince(l2_lastReclaimBar))
-
-    array.push(l2_mode, modeToStr(mode))
-    array.push(l2_msc, l2_modeScoreNow)
-
-    // ---- NEW fields push ----
-    array.push(l2_emaF, emaFast)
-    array.push(l2_emaS, emaSlow)
-
-    array.push(l2_decL, decLow)
-    array.push(l2_decH, decHigh)
-    float _decMid = (decLow + decHigh) * 0.5
-    array.push(l2_decM, _decMid)
-
-    array.push(l2_htfOn, htfOnNow ? 1 : 0)
-    array.push(l2_htfNe, htfNeutral ? 1 : 0)
-
-    // START/END BULL flags (event on this bar)
-    bool _sbNow = bullAcceptUp
-    bool _ebNow = bullLostAcceptance
-    array.push(l2_sb, _sbNow ? 1 : 0)
-    array.push(l2_eb, _ebNow ? 1 : 0)
-
-    // ADX + slope (optional but cheap)
-    float _adxS = chgN(adx, adxSlopeBars)
-    array.push(l2_adx, adx)
-    array.push(l2_adxS, _adxS)
-
-
-    // cap
-    while array.size(l2_bi) > l2_cap
-        array.shift(l2_bi)
-        array.shift(l2_t)
-
-        array.shift(l2_o)
-        array.shift(l2_h)
-        array.shift(l2_l)
-        array.shift(l2_c)
-        array.shift(l2_v)
-
-        array.shift(l2_atrA)
-        array.shift(l2_body)
-        array.shift(l2_uw)
-        array.shift(l2_lw)
-        array.shift(l2_cloc)
-        array.shift(l2_rngA)
-
-        array.shift(l2_dDec)
-        array.shift(l2_dEF)
-        array.shift(l2_dES)
-
-        array.shift(l2_abv)
-        array.shift(l2_blw)
-
-        array.shift(l2_pbz)
-        array.shift(l2_comp)
-        array.shift(l2_ovc)
-
-        array.shift(l2_vflag)
-        array.shift(l2_rwid)
-
-        array.shift(l2_bsi)
-        array.shift(l2_bsa)
-        array.shift(l2_bsr)
-
-        array.shift(l2_mode)
-        array.shift(l2_msc)
-
-        // ---- NEW fields shift ----
-        array.shift(l2_emaF)
-        array.shift(l2_emaS)
-
-        array.shift(l2_decL)
-        array.shift(l2_decH)
-        array.shift(l2_decM)
-
-        array.shift(l2_htfOn)
-        array.shift(l2_htfNe)
-
-        array.shift(l2_sb)
-        array.shift(l2_eb)
-
-        array.shift(l2_adx)
-        array.shift(l2_adxS)
-
-// Wrapper: called every calculation; only does work when exportL2 + confirmed.
-l2_pushBar() =>
     if exportL2 and barstate.isconfirmed
-        l2_pushBar_impl()
+        // wick %s
+        float _rng = math.max(high - low, syminfo.mintick)
+        float _body = math.abs(close - open) / _rng
+        float _uw = (high - math.max(open, close)) / _rng
+        float _lw = (math.min(open, close) - low) / _rng
+
+        // distances in ATR
+        float _dEF = atr > 0 ? math.abs(close - emaFast) / atr : na
+        float _dES = atr > 0 ? math.abs(close - emaSlow) / atr : na
+
+        // push all
+        array.push(l2_bi, bar_index)
+        array.push(l2_t, time)
+
+        array.push(l2_o, open)
+        array.push(l2_h, high)
+        array.push(l2_l, low)
+        array.push(l2_c, close)
+        array.push(l2_v, volume)
+
+        array.push(l2_atrA, atr)
+        array.push(l2_body, _body)
+        array.push(l2_uw, _uw)
+        array.push(l2_lw, _lw)
+        array.push(l2_cloc, closeLoc)
+        array.push(l2_rngA, (atr > 0) ? (_rng / atr) : na)
+
+        array.push(l2_dDec, l2_distDecATR)
+        array.push(l2_dEF, _dEF)
+        array.push(l2_dES, _dES)
+
+        array.push(l2_abv, l2_aboveDec)
+        array.push(l2_blw, l2_belowDec)
+
+        array.push(l2_pbz, l2_inPBZone)
+        array.push(l2_comp, l2_inCompression)
+        array.push(l2_ovc, l2_overlapCnt)
+
+        array.push(l2_vflag, l2_volFlag)
+        array.push(l2_rwid, l2_rangeWidthATR)
+
+        array.push(l2_bsi, l2_barsSince(l2_lastImpulseBar))
+        array.push(l2_bsa, l2_barsSince(l2_lastAcceptBar))
+        array.push(l2_bsr, l2_barsSince(l2_lastReclaimBar))
+
+        array.push(l2_mode, modeToStr(mode))
+        array.push(l2_msc, l2_modeScoreNow)
+
+        // ---- NEW fields push ----
+        array.push(l2_emaF, emaFast)
+        array.push(l2_emaS, emaSlow)
+
+        array.push(l2_decL, decLow)
+        array.push(l2_decH, decHigh)
+        float _decMid = (decLow + decHigh) * 0.5
+        array.push(l2_decM, _decMid)
+
+        array.push(l2_htfOn, htfOnNow ? 1 : 0)
+        array.push(l2_htfNe, htfNeutral ? 1 : 0)
+
+        // START/END BULL flags (event on this bar)
+        bool _sbNow = bullAcceptUp
+        bool _ebNow = bullLostAcceptance
+        array.push(l2_sb, _sbNow ? 1 : 0)
+        array.push(l2_eb, _ebNow ? 1 : 0)
+
+        // ADX + slope (optional but cheap)
+        float _adxS = chgN(adx, adxSlopeBars)
+        array.push(l2_adx, adx)
+        array.push(l2_adxS, _adxS)
+
+
+        // cap
+        while array.size(l2_bi) > l2_cap
+            array.shift(l2_bi)
+            array.shift(l2_t)
+
+            array.shift(l2_o)
+            array.shift(l2_h)
+            array.shift(l2_l)
+            array.shift(l2_c)
+            array.shift(l2_v)
+
+            array.shift(l2_atrA)
+            array.shift(l2_body)
+            array.shift(l2_uw)
+            array.shift(l2_lw)
+            array.shift(l2_cloc)
+            array.shift(l2_rngA)
+
+            array.shift(l2_dDec)
+            array.shift(l2_dEF)
+            array.shift(l2_dES)
+
+            array.shift(l2_abv)
+            array.shift(l2_blw)
+
+            array.shift(l2_pbz)
+            array.shift(l2_comp)
+            array.shift(l2_ovc)
+
+            array.shift(l2_vflag)
+            array.shift(l2_rwid)
+
+            array.shift(l2_bsi)
+            array.shift(l2_bsa)
+            array.shift(l2_bsr)
+
+            array.shift(l2_mode)
+            array.shift(l2_msc)
+
+            // ---- NEW fields shift ----
+            array.shift(l2_emaF)
+            array.shift(l2_emaS)
+
+            array.shift(l2_decL)
+            array.shift(l2_decH)
+            array.shift(l2_decM)
+
+            array.shift(l2_htfOn)
+            array.shift(l2_htfNe)
+
+            array.shift(l2_sb)
+            array.shift(l2_eb)
+
+            array.shift(l2_adx)
+            array.shift(l2_adxS)
 
 
 // ---- Active window state (one at a time) ----
@@ -2621,18 +2618,18 @@ bool bullPBAgeVeto = bullPBAgeBars > bullPBMaxAgeBars
 // --- PB Freshness: MAJOR impulse age (NEW axis) ---
 int pbImpLookback = 12
 
+int bullMajorImpulseAgePrev = na(bullLastMajorImpulseBar) ? 999999 : (bar_index - bullLastMajorImpulseBar)
+
 float pbMajorBreakLvl = ta.highest(high[1], pbImpLookback)
-bool  pbMajorImpulse  = (bodyPct >= 0.70) and (closeLoc >= 0.80) and (close > pbMajorBreakLvl)
 
+bool pbMajorImpulse =
+     (bodyPct >= 0.70) and
+     (closeLoc >= 0.80) and
+     (close > pbMajorBreakLvl)
 
-var int bullLastMajorImpulseBar = na
+// 4) update last major impulse AFTER we captured agePrev
 if pbMajorImpulse
     bullLastMajorImpulseBar := bar_index
-
-
-
-
-
 
 // --- PB Freshness veto (Impulse-Age) (NEW) ---
 // "Impulse age" = bars since the last detected impulse (from L2 state)
@@ -2654,13 +2651,14 @@ bool bullPBLateExt =
 bool bullPBLateShallow =
      (atr > 0) and (bullPBDepth < (atr * bullPBLateMinDepth_ATR))
 bool bullPBLifecycleVeto = bullPBLateAge and bullPBLateExt and bullPBLateShallow
+// START_BULL can reprint late and reset bullStartBar; do not rely only on bullPBAgeBars.
 bool bullPBFreshnessLateOk =
-     (bullPBAgeBars >= bullPBFreshMinAgeBars) or bullPBLateVeto or bullPBLifecycleVeto or bullPBLateStallVeto or bullPBAgeVeto
+     (bullPBAgeBars >= bullPBFreshMinAgeBars) or bullPBLateVeto or bullPBLifecycleVeto or bullPBAgeVeto
+
 int bullMajorImpulseAgeBars = na(bullLastMajorImpulseBar) ? 999999 : (bar_index - bullLastMajorImpulseBar)
 
 int bullPBImpulseAgeBars = bullMajorImpulseAgeBars
 bool bullPBFreshVeto = bullPBUseFreshness and bullPBFreshnessLateOk and (bullPBImpulseAgeBars > bullPBMaxImpulseAgeBars)
-
 
 
 // Touch logic: by default allow "touch" (brings PB trades back). Optional strict mode requires reclaim close.
@@ -3058,7 +3056,8 @@ if entered and exportL2 and barstate.isconfirmed
 
 // --- Bull-leg stall tracking (runs even when flat) ---
 // Counts consecutive confirmed bars with NO new bull-leg high while Bull is armed.
-l2_pushBar()
+l2_pushBar_impl()
+
 if barstate.isconfirmed
     if bullArmed and (not bearActive) and (not pendingBear)
         float prevHi = nz(bullLegHi[1], na)
