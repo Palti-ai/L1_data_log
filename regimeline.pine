@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v5.101 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v5.102 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -107,6 +107,10 @@ bullPBStallLookback     = input.int(8,  "Bull PB: stall lookback bars",        g
 bullPBStallMinCount     = input.int(5,  "Bull PB: stall min bars (cluster)",   group=grpBull, minval=2, maxval=20)
 bullPBStallBodyATR      = input.float(0.25, "Bull PB: stall body <= x * ATR",  group=grpBull, step=0.05, minval=0.05, maxval=1.0)
 bullPBStallNeedHighFail = input.bool(true, "Bull PB: stall requires HH progress fail", group=grpBull)
+// --- PB Freshness / Impulse-Age (NEW) ---
+bullPBUseFreshness       = input.bool(true,  "PB Freshness veto (Impulse-Age)", group="Bull / PB", inline="PBF")
+bullPBMaxImpulseAgeBars  = input.int(18,     "Max bars since last impulse",     group="Bull / PB", inline="PBF", minval=1)
+bullPBFreshMinAgeBars    = input.int(24,     "Apply only if bull age >= bars",  group="Bull / PB", minval=0)
 
 // --- Bull Acceptance-Compression entry (no PB) ---
 bullCompOn = input.bool(true, "Bull COMP: enable acceptance-compression entry", group=grpBull)
@@ -837,6 +841,7 @@ if exportToLogs and dbgPBProbe and barstate.isfirst
       "close,atr,bullLevel,emaFast," +
       "distBullATR,distEFAtr," +
       "pbAgeBars,bullLegNoNewHiStreak,pbDepthATR," +
+      "pbImpulseAgeBars,pbFreshVeto," +
       "pbExtended,pbShallow,pbExhaustVeto,pbLateStallVeto,pbLifecycleVeto,pbTouchOk," +
       "bullPBEnter,bullPBEnterExec," +
       "bullStartBar,bullPBMaxAgeBars,pbAgeVeto,modeNow,bullArmedNow"
@@ -2608,6 +2613,16 @@ bool bullPBExhaustVeto = bullPBExtended and bullPBShallow
 int bullPBAgeBars = (not na(bullStartBar)) ? (bar_index - bullStartBar) : 0
 bool bullPBAgeVeto = bullPBAgeBars > bullPBMaxAgeBars
 
+// --- PB Freshness veto (Impulse-Age) (NEW) ---
+// "Impulse age" = bars since the last detected impulse (from L2 state)
+int bullPBImpulseAgeBars = l2_barsSince(l2_lastImpulseBar)
+
+// Apply freshness veto only in later lifecycle (prevents harming early trend digestion)
+bool bullPBFreshnessLateOk = bullPBAgeBars >= bullPBFreshMinAgeBars
+
+// Veto: last impulse is too old -> PB is likely late / initiative exhausted
+bool bullPBFreshVeto = bullPBUseFreshness and bullPBFreshnessLateOk and (bullPBImpulseAgeBars > bullPBMaxImpulseAgeBars)
+
 // --- PB Late-Stall veto (kills late PBs even if pullback depth is real) ---
 bool bullPBLateStallAge = bullPBAgeBars >= bullPBLateStallAgeBars
 bool bullPBLateStall = bullLegNoNewHiStreak >= bullPBLateStallNoHHBars
@@ -2665,17 +2680,7 @@ bool bullPB_HHProofOk =
 
 
 // Final PB execution gate
-bool bullPBEnterExec =
-     bullPBEnter and
-     bullPBTouchOk and
-     bullPB_HHProofOk and
-     (bullPBScore >= bullPB_MinScore) and
-     (not bullPBStallVeto) and
-     (not bullPBExhaustVeto) and
-     (not bullPBLateVeto) and
-     (not bullPBLifecycleVeto) and
-     (not bullPBLateStallVeto) and
-     (not bullPBAgeVeto)
+bool bullPBEnterExec = bullPBEnter and bullPBTouchOk and bullPB_HHProofOk and (bullPBScore >= bullPB_MinScore) and (not bullPBStallVeto) and (not bullPBExhaustVeto) and (not bullPBLateVeto) and (not bullPBLifecycleVeto) and (not bullPBLateStallVeto) and (not bullPBAgeVeto) and (not bullPBFreshVeto)
 
 // ==============================
 // PBDBG: log PB candidates (EXEC + optional BLOCK) to Pine Logs
@@ -2695,6 +2700,8 @@ if exportToLogs and dbgPBProbe and barstate.isconfirmed and bullPBEnter and (dbg
     str.tostring(time) + "," +
     str.tostring(bullPBAgeBars) + "," +
     str.tostring(bullLegNoNewHiStreak) + "," +
+    str.tostring(bullPBImpulseAgeBars) + "," +
+    str.tostring(bullPBFreshVeto ? 1 : 0) + "," +
     str.tostring(bullPBDepth / atr) + "," +
     str.tostring(bullPBExtended ? 1 : 0) + "," +
     str.tostring(bullPBShallow ? 1 : 0) + "," +
