@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v5.103 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v5.104 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -2308,6 +2308,13 @@ l2_pushBar() =>
         array.shift(l2_adxS)
 
 
+// Wrapper: called every calculation to satisfy Pine consistency warning.
+// Actual push happens only when exportL2 + confirmed.
+l2_pushBar_eachCalc() =>
+    if exportL2 and barstate.isconfirmed
+        l2_pushBar()
+
+
 // ---- Active window state (one at a time) ----
 var int    L2_eventId      = 0
 var bool   L2_active       = false
@@ -2616,10 +2623,9 @@ bool bullPBAgeVeto = bullPBAgeBars > bullPBMaxAgeBars
 // --- PB Freshness: MAJOR impulse age (NEW axis) ---
 int pbImpLookback = 12
 
-bool pbMajorImpulse =
-     (bodyPct >= 0.70) and
-     (closeLoc >= 0.80) and
-     (close > ta.highest(high[1], pbImpLookback))
+float pbMajorBreakLvl = ta.highest(high[1], pbImpLookback)
+bool  pbMajorImpulse  = (bodyPct >= 0.70) and (closeLoc >= 0.80) and (close > pbMajorBreakLvl)
+
 
 var int bullLastMajorImpulseBar = na
 if pbMajorImpulse
@@ -3049,6 +3055,8 @@ if entered and exportL2 and barstate.isconfirmed
 
 // --- Bull-leg stall tracking (runs even when flat) ---
 // Counts consecutive confirmed bars with NO new bull-leg high while Bull is armed.
+l2_pushBar_eachCalc()
+
 if barstate.isconfirmed
     if bullArmed and (not bearActive) and (not pendingBear)
         float prevHi = nz(bullLegHi[1], na)
@@ -3140,9 +3148,7 @@ bearBlkMask += ((not bearReentryOk) ? BLK_SPACING : 0)
 bearBlkMask += ((not shortCooldownOk) ? BLK_HTF : 0)
 bearBlkMask += ((not bearLocalDowntrendOk) ? BLK_OTHER : 0)
 
-// ---- L2: push one snapshot per confirmed bar (must run before any L2 emits/backfills) ----
-if exportL2 and barstate.isconfirmed
-    l2_pushBar()
+
 
 
 // ---- L2 window log: CANDIDATES (missed opportunities) ----
