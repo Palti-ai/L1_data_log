@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v5.109 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v5.111 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -424,9 +424,12 @@ raRsiMax_T = raRsiMax + dRaRsi
 
 [pdi, mdi, adx] = ta.dmi(adxLen, adxSmooth)
 
+// Precompute (Pine consistency): history funcs must run each calculation
+float adxSlopeNow = chgN(adx, adxSlopeBars)
+
 // --- ADX split: Regime vs Execution ---
 // Regime qualification (STRICT): ADX >= min, optional rising filter
-adxRising        = chgN(adx, adxSlopeBars) > 0
+adxRising        = adxSlopeNow > 0
 adxBullRegimeOk  = (adx >= adxBullMin) and (not adxUseSlope or adxRising)
 
 // Execution inside Bull (SOFT): ADX >= adxBullExecMin, no slope requirement
@@ -2061,6 +2064,18 @@ const int BLK_WINDOW   = 16
 const int BLK_SCORE    = 32
 const int BLK_BEAR     = 64
 const int BLK_OTHER    = 128
+// PB veto bits (PBDEC veto mask)
+const int PBV_TOUCH       = 1
+const int PBV_HHPROOF     = 2
+const int PBV_SCORE       = 4
+const int PBV_STALL       = 8
+const int PBV_EXHAUST     = 16
+const int PBV_LATE        = 32
+const int PBV_LIFECYCLE   = 64
+const int PBV_LATE_STALL  = 128
+const int PBV_AGE         = 256
+const int PBV_FRESH       = 512
+
 
 // ---- Rolling buffers (keep last l2WindowBars bars of features) ----
 var array<int>   l2_bi   = array.new_int()
@@ -2180,7 +2195,7 @@ l2_barsSince(_bar) =>
 
 // ---- Update rolling buffers ON CONFIRMED bars ----
 l2_pushBar_impl() =>
-    if exportL2 and barstate.isconfirmed
+    if barstate.isconfirmed
         // wick %s
         float _rng = math.max(high - low, syminfo.mintick)
         float _body = math.abs(close - open) / _rng
@@ -2248,7 +2263,7 @@ l2_pushBar_impl() =>
         array.push(l2_eb, _ebNow ? 1 : 0)
 
         // ADX + slope (optional but cheap)
-        float _adxS = chgN(adx, adxSlopeBars)
+        float _adxS = adxSlopeNow
         array.push(l2_adx, adx)
         array.push(l2_adxS, _adxS)
 
@@ -2321,7 +2336,13 @@ var bool   L2_isEntryEvt   = false
 var bool   L2_isExitEvt    = false
 var bool   L2_isCandEvt    = false
 var int    L2_fwdLeft      = 0
-
+// ---- PBDEC event fields (event-level; printed only when evtType starts with PBDEC_) ----
+var int L2_pbAgeBars      = na
+var int L2_pbImpAgeBars   = na
+var int L2_pbFreshLateOk  = na   // 0/1
+var int L2_pbFreshVeto    = na   // 0/1
+var int L2_pbEnterExec    = na   // 0/1
+var int L2_pbVetoMask     = na   // PB-specific veto bitmask
 var int    L2_dropCnt      = 0
 
 var bool l2HeaderDone = false
@@ -2335,7 +2356,8 @@ if exportL2 and not l2HeaderDone and barstate.isconfirmed
          "emaFast,emaSlow,decLow,decHigh,decMid," +
          "htfOn,htfNeutral,startBull,endBull," +
          "adx,adxSlope," +
-         "isEntry,isExit,exitReason,isCand,blkMask,posTag,posState"
+         "isEntry,isExit,exitReason,isCand,blkMask,posTag,posState," +
+        "pbAgeBars,pbImpAgeBars,pbFreshLateOk,pbFreshVeto,pbEnterExec,pbVetoMask"
     )
 
 
@@ -2351,9 +2373,20 @@ l2_emitRow(_idx, _rel, _isEntry, _isExit, _exitReason, _isCand, _blkMask) =>
     string exitR    = l2_sanitize(_exitReason)
     string tagS     = l2_sanitize(posTagToLogMode(posTag))
     string posStS   = l2_sanitize(posStateStr())
+    // PBDEC fields (only populated for PB decision events; blank otherwise)
+    bool isPBDec = str.startswith(evtType, "PBDEC_")
+    string pbAgeS      = isPBDec ? str.tostring(L2_pbAgeBars) : ""
+    string pbImpAgeS   = isPBDec ? str.tostring(L2_pbImpAgeBars) : ""
+    string pbLateOkS   = isPBDec ? str.tostring(L2_pbFreshLateOk) : ""
+    string pbFreshS    = isPBDec ? str.tostring(L2_pbFreshVeto) : ""
+    string pbExecS     = isPBDec ? str.tostring(L2_pbEnterExec) : ""
+    string pbMaskS     = isPBDec ? str.tostring(L2_pbVetoMask) : ""
 
     int ebar = L2_evtBar
     log.info(
+      L1_runId + "," +
+      L1_tf + "," +
+      L1_scriptVer + "," +
       coin + "," +
       str.tostring(L2_eventId) + "," +
       evtType + "," +
@@ -2402,7 +2435,13 @@ l2_emitRow(_idx, _rel, _isEntry, _isExit, _exitReason, _isCand, _blkMask) =>
       str.tostring(_isCand ? 1 : 0) + "," +
       str.tostring(_blkMask) + "," +
       tagS + "," +
-      posStS
+      posStS + "," +
+      pbAgeS + "," +
+      pbImpAgeS + "," +
+      pbLateOkS + "," +
+      pbFreshS + "," +
+      pbExecS + "," +
+      pbMaskS
     )
 
 
@@ -2704,6 +2743,57 @@ bool bullPB_HHProofOk =
 
 // Final PB execution gate
 bool bullPBEnterExec = bullPBEnter and bullPBTouchOk and bullPB_HHProofOk and (bullPBScore >= bullPB_MinScore) and (not bullPBStallVeto) and (not bullPBExhaustVeto) and (not bullPBLateVeto) and (not bullPBLifecycleVeto) and (not bullPBLateStallVeto) and (not bullPBAgeVeto) and (not bullPBFreshVeto)
+
+// ---- PBDEC veto mask (PB-specific) ----
+int pbVetoMask = 0
+pbVetoMask += (not bullPBTouchOk) ? PBV_TOUCH : 0
+pbVetoMask += (not bullPB_HHProofOk) ? PBV_HHPROOF : 0
+pbVetoMask += ((bullPBScore < bullPB_MinScore)) ? PBV_SCORE : 0
+pbVetoMask += (bullPBStallVeto ? PBV_STALL : 0)
+pbVetoMask += (bullPBExhaustVeto ? PBV_EXHAUST : 0)
+pbVetoMask += (bullPBLateVeto ? PBV_LATE : 0)
+pbVetoMask += (bullPBLifecycleVeto ? PBV_LIFECYCLE : 0)
+pbVetoMask += (bullPBLateStallVeto ? PBV_LATE_STALL : 0)
+pbVetoMask += (bullPBAgeVeto ? PBV_AGE : 0)
+pbVetoMask += (bullPBFreshVeto ? PBV_FRESH : 0)
+
+// ---- L2 window log: PB DECISION (exec OR blocked) ----
+if exportL2 and barstate.isconfirmed and bullPBEnter
+    if L2_active
+        L2_dropCnt += 1
+    else
+        L2_eventId += 1
+        L2_active := true
+        L2_evtBar := bar_index
+        L2_evtType := "PBDEC_BULL_PB_RECLAIM"
+        L2_exitReason := ""
+        L2_blockedMask := pbVetoMask
+        L2_isEntryEvt := false
+        L2_isExitEvt := false
+        L2_isCandEvt := true
+        L2_fwdLeft := l2WindowBars
+
+        // PBDEC fields captured at decision time
+        L2_pbAgeBars     := bullPBAgeBars
+        L2_pbImpAgeBars  := bullPBImpulseAgeBars
+        L2_pbFreshLateOk := bullPBFreshnessLateOk ? 1 : 0
+        L2_pbFreshVeto   := bullPBFreshVeto ? 1 : 0
+        L2_pbEnterExec   := bullPBEnterExec ? 1 : 0
+        L2_pbVetoMask    := pbVetoMask
+
+        int szPB = array.size(l2_bi)
+        if szPB > 0
+            int curIdxPB = szPB - 1
+            int maxBackPB = math.min(l2WindowBars, curIdxPB)
+
+            // Backfill: -N..-1
+            for j = 1 to maxBackPB
+                int i = maxBackPB - j + 1
+                int idx = curIdxPB - i
+                l2_emitRow(idx, -i, false, false, "", true, pbVetoMask)
+
+            // Emit decision bar as rel=0 (this is the PB decision time row)
+            l2_emitRow(curIdxPB, 0, false, false, "", true, pbVetoMask)
 
 // ==============================
 // PBDBG: log PB candidates (EXEC + optional BLOCK) to Pine Logs
