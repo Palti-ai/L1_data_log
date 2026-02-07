@@ -700,7 +700,6 @@ var bool bearForceCloseShort = false
 //====================================================
 var int  pbRetryKey        = na
 var int  pbRetryAttempts   = 0
-var bool pbRetryFailActive = false
 var bool pbLastEntryWasPB  = false
 var int  pbLastEntryKey    = na
 
@@ -2842,9 +2841,6 @@ bool bullPB_HHProofOk =
 
 // Final PB execution gate
 bool bullPBEnterExec = bullPBEnter and bullPBTouchOk and bullPB_HHProofOk and (bullPBScore >= bullPB_MinScore) and (not bullPBStallVeto) and (not bullPBExhaustVeto) and (not bullPBLateVeto) and (not bullPBLifecycleVeto) and (not bullPBLateStallVeto) and (not bullPBAgeVeto) and (not bullPBFreshVeto) and (not bullPBExpAgeVeto) and (not bullPBImpulseChaseVeto) and (not bullPBLateFailVeto)
-
-// PB veto bits
-int PBV_RETRY_FAIL = 4096
 
 // ---- PBDEC veto mask (PB-specific) ----
 int pbVetoMask = 0
