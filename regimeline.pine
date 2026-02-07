@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.0 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.01 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -107,6 +107,10 @@ bullPBStallLookback     = input.int(8,  "Bull PB: stall lookback bars",        g
 bullPBStallMinCount     = input.int(5,  "Bull PB: stall min bars (cluster)",   group=grpBull, minval=2, maxval=20)
 bullPBStallBodyATR      = input.float(0.25, "Bull PB: stall body <= x * ATR",  group=grpBull, step=0.05, minval=0.05, maxval=1.0)
 bullPBStallNeedHighFail = input.bool(true, "Bull PB: stall requires HH progress fail", group=grpBull)
+// --- PB Failed-Continuation veto (NEW) ---
+bullPBUseLateFail            = input.bool(true, "PB Failed-Continuation veto", group=grpBull)
+bullPBLateFailMinImpAgeBars  = input.int(4, "Bull PB: late-fail min impulse-age bars", group=grpBull, minval=1, maxval=200)
+bullPBLateFailMinStallCount  = input.int(3, "Bull PB: late-fail min stall bars (within lookback)", group=grpBull, minval=1, maxval=20)
 // --- PB Freshness / Impulse-Age (NEW) ---
 bullPBUseFreshness       = input.bool(true,  "PB Freshness veto (Impulse-Age)", group="Bull / PB", inline="PBF")
 bullPBMaxImpulseAgeBars  = input.int(18,     "Max bars since last impulse",     group="Bull / PB", inline="PBF", minval=1)
@@ -586,6 +590,10 @@ var float bullAddRefHi = na   // last add/entry reference high-water mark
 var float bullHH = na
 var int   bullHHBar = na
 var float bullArmRollHigh = na   // Option C: rollHigh snapshot at arm (accept-up)
+var int  pbLastPBEntryImpulseBar = na     // impulse bar used when we last entered a PB trade
+var bool pbInPBTrade             = false  // whether current open position came from PB entry
+var int  pbRetryFailImpulseBar   = na     // impulse bar that is “blocked” due to prior PB->INV failure
+var bool pbRetryFailActive       = false  // true = block PB entries on that impulse
 
 // --- PB Freshness state ---
 var int bullLastMajorImpulseBar = na
@@ -2081,6 +2089,10 @@ const int PBV_AGE         = 256
 const int PBV_FRESH       = 512
 const int PBV_EXPAGE = 1024
 const int PBV_IMPULSE_CHASE = 2048
+const int PBV_LATE_FAIL = 4096
+const int PBV_RETRY_FAIL = 8192
+
+
 
 
 // ---- Rolling buffers (keep last l2WindowBars bars of features) ----
@@ -2777,6 +2789,14 @@ bool pbHighFail =
      (not bullPBStallNeedHighFail) or
      (pbHighMax <= pbHighMaxPrev)
 
+// --- PB Failed-Continuation veto (NEW) ---
+// Blocks late PB attempts that stall (many small bodies) and fail to progress highs.
+bool bullPBLateFailVeto =
+     bullPBUseLateFail and
+     (bullPBImpulseAgeBars >= bullPBLateFailMinImpAgeBars) and
+     pbHighFail and
+     (pbStallCount >= bullPBLateFailMinStallCount)
+
 bool bullPBStallCluster = (pbStallCount >= bullPBStallMinCount) and pbHighFail
 
 // Hard veto (PB only)
@@ -2795,7 +2815,7 @@ bool bullPB_HHProofOk =
 
 
 // Final PB execution gate
-bool bullPBEnterExec = bullPBEnter and bullPBTouchOk and bullPB_HHProofOk and (bullPBScore >= bullPB_MinScore) and (not bullPBStallVeto) and (not bullPBExhaustVeto) and (not bullPBLateVeto) and (not bullPBLifecycleVeto) and (not bullPBLateStallVeto) and (not bullPBAgeVeto) and (not bullPBFreshVeto) and (not bullPBExpAgeVeto) and (not bullPBImpulseChaseVeto)
+bool bullPBEnterExec = bullPBEnter and bullPBTouchOk and bullPB_HHProofOk and (bullPBScore >= bullPB_MinScore) and (not bullPBStallVeto) and (not bullPBExhaustVeto) and (not bullPBLateVeto) and (not bullPBLifecycleVeto) and (not bullPBLateStallVeto) and (not bullPBAgeVeto) and (not bullPBFreshVeto) and (not bullPBExpAgeVeto) and (not bullPBImpulseChaseVeto) and (not bullPBLateFailVeto)
 
 // ---- PBDEC veto mask (PB-specific) ----
 int pbVetoMask = 0
@@ -2811,7 +2831,7 @@ pbVetoMask += (bullPBAgeVeto ? PBV_AGE : 0)
 pbVetoMask += (bullPBFreshVeto ? PBV_FRESH : 0)
 pbVetoMask += (bullPBExpAgeVeto ? PBV_EXPAGE : 0)
 pbVetoMask += (bullPBImpulseChaseVeto ? PBV_IMPULSE_CHASE : 0)
-
+pbVetoMask += (bullPBLateFailVeto ? PBV_LATE_FAIL : 0)
 
 // ---- L2 window log: PB DECISION (exec OR blocked) ----
 if exportL2 and barstate.isconfirmed and bullPBEnter
