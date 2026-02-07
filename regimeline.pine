@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v5.113 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v5.114 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -2349,6 +2349,12 @@ var int L2_pbEnterExec    = na   // 0/1
 var int L2_pbVetoMask     = na   // PB-specific veto bitmask
 var int L2_pbExpAgeBars = na
 var int L2_pbExpAgeVeto = na
+var int L2_pbLateVeto        = na   // 0/1
+var int L2_pbLifecycleVeto   = na   // 0/1
+var int L2_pbAgeVeto         = na   // 0/1
+var int L2_pbFreshMinAge     = na   // int
+var int L2_pbMajorImpulseNow = na   // 0/1
+var int L2_pbLastMajorImpBar = na   // bar_index
 var int    L2_dropCnt      = 0
 
 var bool l2HeaderDone = false
@@ -2363,7 +2369,8 @@ if exportL2 and not l2HeaderDone and barstate.isconfirmed
          "htfOn,htfNeutral,startBull,endBull," +
          "adx,adxSlope," +
          "isEntry,isExit,exitReason,isCand,blkMask,posTag,posState," +
-        "pbAgeBars,pbImpAgeBars,pbFreshLateOk,pbFreshVeto,pbEnterExec,pbVetoMask"
+         "pbAgeBars,pbImpAgeBars,pbFreshLateOk,pbFreshVeto,pbEnterExec,pbVetoMask," +
+         "pbExpAgeBars,pbExpAgeVeto,pbLateVeto,pbLifecycleVeto,pbAgeVeto,pbFreshMinAge,pbMajorImpulseNow,pbLastMajorImpulseBar"
     )
 
 
@@ -2387,6 +2394,15 @@ l2_emitRow(_idx, _rel, _isEntry, _isExit, _exitReason, _isCand, _blkMask) =>
     string pbFreshS    = isPBDec ? str.tostring(L2_pbFreshVeto) : ""
     string pbExecS     = isPBDec ? str.tostring(L2_pbEnterExec) : ""
     string pbMaskS     = isPBDec ? str.tostring(L2_pbVetoMask) : ""
+    string pbExpAgeS   = isPBDec ? str.tostring(L2_pbExpAgeBars) : ""
+    string pbExpVetoS  = isPBDec ? str.tostring(L2_pbExpAgeVeto) : ""
+    string pbLateVetoS = isPBDec ? str.tostring(L2_pbLateVeto) : ""
+    string pbLifeVetoS = isPBDec ? str.tostring(L2_pbLifecycleVeto) : ""
+    string pbAgeVetoS  = isPBDec ? str.tostring(L2_pbAgeVeto) : ""
+    string pbMinAgeS   = isPBDec ? str.tostring(L2_pbFreshMinAge) : ""
+    string pbMajNowS   = isPBDec ? str.tostring(L2_pbMajorImpulseNow) : ""
+    string pbLastImpS  = isPBDec ? str.tostring(L2_pbLastMajorImpBar) : ""
+
 
     int ebar = L2_evtBar
     log.info(
@@ -2447,7 +2463,15 @@ l2_emitRow(_idx, _rel, _isEntry, _isExit, _exitReason, _isCand, _blkMask) =>
       pbLateOkS + "," +
       pbFreshS + "," +
       pbExecS + "," +
-      pbMaskS
+      pbMaskS + "," +
+      pbExpAgeS + "," +
+      pbExpVetoS + "," +
+      pbLateVetoS + "," +
+      pbLifeVetoS + "," +
+      pbAgeVetoS + "," +
+      pbMinAgeS + "," +
+      pbMajNowS + "," +
+      pbLastImpS
     )
 
 
@@ -2806,6 +2830,13 @@ if exportL2 and barstate.isconfirmed and bullPBEnter
         L2_pbVetoMask    := pbVetoMask
         L2_pbExpAgeBars := bullPBExpAgeBars
         L2_pbExpAgeVeto := bullPBExpAgeVeto ? 1 : 0
+        L2_pbLateVeto        := bullPBLateVeto ? 1 : 0
+        L2_pbLifecycleVeto   := bullPBLifecycleVeto ? 1 : 0
+        L2_pbAgeVeto         := bullPBAgeVeto ? 1 : 0
+        L2_pbFreshMinAge     := bullPBFreshMinAgeBars
+        L2_pbMajorImpulseNow := pbMajorImpulse ? 1 : 0
+        L2_pbLastMajorImpBar := bullLastMajorImpulseBar
+
 
         int szPB = array.size(l2_bi)
         if szPB > 0
