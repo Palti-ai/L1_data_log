@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v5.111 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v5.112 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -590,6 +590,7 @@ var int bullLastMajorImpulseBar = na
 float bullTrailLevel = na
 // --- Bull impulse entry one-shot latch ---
 var bool bullImpulseDone = false
+var int bullLastExpansionBar = na
 
 //====================================================
 // Layer-1: Trade snapshot vars (ENTRY + PENDING)
@@ -2691,14 +2692,23 @@ bool bullPBLateShallow =
      (atr > 0) and (bullPBDepth < (atr * bullPBLateMinDepth_ATR))
 bool bullPBLifecycleVeto = bullPBLateAge and bullPBLateExt and bullPBLateShallow
 // START_BULL can reprint late and reset bullStartBar; do not rely only on bullPBAgeBars.
-bool bullPBFreshnessLateOk =
-     (bullPBAgeBars >= bullPBFreshMinAgeBars) or bullPBLateVeto or bullPBLifecycleVeto or bullPBAgeVeto
+//bool bullPBFreshnessLateOk =
+//     (bullPBAgeBars >= bullPBFreshMinAgeBars) or bullPBLateVeto or bullPBLifecycleVeto or bullPBAgeVeto
 
 int bullMajorImpulseAgeBars = na(bullLastMajorImpulseBar) ? 999999 : (bar_index - bullLastMajorImpulseBar)
 
 int bullPBImpulseAgeBars = bullMajorImpulseAgeBars
-bool bullPBFreshVeto = bullPBUseFreshness and bullPBFreshnessLateOk and (bullPBImpulseAgeBars > bullPBMaxImpulseAgeBars)
 
+// --- PB Freshness "Late eligibility" (FIXED) ---
+// START_BULL can reprint late and reset bullStartBar; do not rely only on bullPBAgeBars.
+// LateOk should activate when PB is late by lifecycle/late/age signals.
+bool bullPBFreshnessLateOk =
+     (bullPBAgeBars >= bullPBFreshMinAgeBars) or
+     bullPBLateVeto or
+     bullPBLifecycleVeto or
+     bullPBAgeVeto
+
+bool bullPBFreshVeto = bullPBUseFreshness and bullPBFreshnessLateOk and (bullPBImpulseAgeBars > bullPBMaxImpulseAgeBars)
 
 // Touch logic: by default allow "touch" (brings PB trades back). Optional strict mode requires reclaim close.
 bool bullPBTouchOk =
