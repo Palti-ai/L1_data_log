@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.04 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.01 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -590,12 +590,6 @@ var float bullAddRefHi = na   // last add/entry reference high-water mark
 var float bullHH = na
 var int   bullHHBar = na
 var float bullArmRollHigh = na   // Option C: rollHigh snapshot at arm (accept-up)
-var int  pbLastPBEntryImpulseBar = na     // impulse bar used when we last entered a PB trade
-var bool pbInPBTrade             = false  // whether current open position came from PB entry
-var int  pbRetryFailImpulseBar   = na     // impulse bar that is “blocked” due to prior PB->INV failure
-var bool pbRetryFailActive       = false  // true = block PB entries on that impulse
-var int  pbIdeaFailImpulseBar = na   // impulse bar that is “blocked” due to vetoed PBDEC idea-failure
-var bool pbIdeaFailActive     = false // true = block PB entries on that impulse
 
 // --- PB Freshness state ---
 var int bullLastMajorImpulseBar = na
@@ -695,15 +689,7 @@ var float tradeLo      = na
 // Defer resets until we are truly flat (calc_on_every_tick safety)
 var bool pendingReset = false
 var bool bearForceCloseShort = false
-//====================================================
-// PB_RETRY_FAIL veto state (NEW)
-// Tracks PB attempts per bullLastMajorImpulseBar.
-// Blocks 2nd+ PB if the first PB ended as BULL_INV and no new major impulse since.
-//====================================================
-var int  pbRetryKey        = na
-var int  pbRetryAttempts   = 0
-var bool pbLastEntryWasPB  = false
-var int  pbLastEntryKey    = na
+
 
 //====================================================
 // LAYER 1 — Trade-level CSV export to Pine Logs
@@ -2100,8 +2086,8 @@ const int PBV_FRESH       = 512
 const int PBV_EXPAGE = 1024
 const int PBV_IMPULSE_CHASE = 2048
 const int PBV_LATE_FAIL = 4096
-const int PBV_RETRY_FAIL = 8192
-const int PBV_IDEA_FAIL = 16384
+
+
 
 // ---- Rolling buffers (keep last l2WindowBars bars of features) ----
 var array<int>   l2_bi   = array.new_int()
@@ -2748,19 +2734,6 @@ bool bullPBLifecycleVeto = bullPBLateAge and bullPBLateExt and bullPBLateShallow
 
 int bullMajorImpulseAgeBars = na(bullLastMajorImpulseBar) ? 999999 : (bar_index - bullLastMajorImpulseBar)
 
-// --- PB retry key (major impulse anchor) ---
-int pbKeyNow = bullLastMajorImpulseBar
-
-// If a new major impulse key appears, reset attempts/fail latch for the new key.
-if (not na(pbKeyNow)) and (na(pbRetryKey) or (pbRetryKey != pbKeyNow))
-    pbRetryKey := pbKeyNow
-    pbRetryAttempts := 0
-    pbRetryFailActive := false
-    pbRetryFailImpulseBar := na
-    pbIdeaFailActive := false
-    pbIdeaFailImpulseBar := na
-
-
 int bullPBImpulseAgeBars = bullMajorImpulseAgeBars
 
 // --- PB Freshness "Late eligibility" (FIXED) ---
@@ -2785,16 +2758,6 @@ bool bullPBExpAgeVeto = bullPBUseExpAge and bullPBFreshnessLateOk and (bullPBExp
 // Blocks PB entries that fire on the same bar as a new major impulse while ADX slope is rising.
 bool bullPBImpulseChaseVeto = pbMajorImpulse and (bullPBImpulseAgeBars == 0) and (adxSlopeNow > 0)
 
-bool bullPBIdeaFailVeto = pbIdeaFailActive and not na(pbIdeaFailImpulseBar) and (bullLastMajorImpulseBar == pbIdeaFailImpulseBar)
-
-// --- PB Retry-Fail veto (NEW) ---
-// Triggered only after the FIRST PB for this pbKeyNow ended with BULL_INV.
-// Then blocks subsequent PB attempts until pbKeyNow changes (new major impulse).
-bool bullPBRetryFailVeto =
-     pbRetryFailActive and
-     (not na(pbKeyNow)) and
-     (pbRetryKey == pbKeyNow) and
-     (pbRetryAttempts >= 1)   // "2nd+" attempt would be next; attempts already contains the first one
 
 // Touch logic: by default allow "touch" (brings PB trades back). Optional strict mode requires reclaim close.
 bool bullPBTouchOk =
@@ -2846,7 +2809,7 @@ bool bullPB_HHProofOk =
 
 
 // Final PB execution gate
-bool bullPBEnterExec = bullPBEnter and bullPBTouchOk and bullPB_HHProofOk and (bullPBScore >= bullPB_MinScore) and (not bullPBStallVeto) and (not bullPBExhaustVeto) and (not bullPBLateVeto) and (not bullPBLifecycleVeto) and (not bullPBLateStallVeto) and (not bullPBAgeVeto) and (not bullPBFreshVeto) and (not bullPBExpAgeVeto) and (not bullPBImpulseChaseVeto) and (not bullPBIdeaFailVeto) and (not bullPBLateFailVeto)
+bool bullPBEnterExec = bullPBEnter and bullPBTouchOk and bullPB_HHProofOk and (bullPBScore >= bullPB_MinScore) and (not bullPBStallVeto) and (not bullPBExhaustVeto) and (not bullPBLateVeto) and (not bullPBLifecycleVeto) and (not bullPBLateStallVeto) and (not bullPBAgeVeto) and (not bullPBFreshVeto) and (not bullPBExpAgeVeto) and (not bullPBImpulseChaseVeto) and (not bullPBLateFailVeto)
 
 // ---- PBDEC veto mask (PB-specific) ----
 int pbVetoMask = 0
@@ -2863,18 +2826,6 @@ pbVetoMask += (bullPBFreshVeto ? PBV_FRESH : 0)
 pbVetoMask += (bullPBExpAgeVeto ? PBV_EXPAGE : 0)
 pbVetoMask += (bullPBImpulseChaseVeto ? PBV_IMPULSE_CHASE : 0)
 pbVetoMask += (bullPBLateFailVeto ? PBV_LATE_FAIL : 0)
-pbVetoMask += (bullPBRetryFailVeto ? PBV_RETRY_FAIL : 0)
-pbVetoMask += (bullPBIdeaFailVeto ? PBV_IDEA_FAIL : 0)
-
-// --- PB_IDEA_FAIL latch (NEW) ---
-// If PBDEC was vetoed on the impulse bar due to IMPULSE_CHASE (2048) or LATE_FAIL (4096),
-// then block subsequent PB attempts on this same bullLastMajorImpulseBar until a new impulse appears.
-int pbIdeaFailBits = PBV_IMPULSE_CHASE | PBV_LATE_FAIL
-bool pbIdeaFailNow = (not pbEnterExec) and pbMajorImpulseNow and ((pbVetoMask & pbIdeaFailBits) != 0)
-
-if pbIdeaFailNow
-    pbIdeaFailActive     := true
-    pbIdeaFailImpulseBar := bullLastMajorImpulseBar
 
 // ---- L2 window log: PB DECISION (exec OR blocked) ----
 if exportL2 and barstate.isconfirmed and bullPBEnter
@@ -2968,16 +2919,6 @@ if exportToLogs and dbgPBProbe and barstate.isconfirmed and bullPBEnter and (dbg
 
 
 if bullPBEnterExec
-    // --- PB_RETRY_FAIL bookkeeping: count PB attempts for this major-impulse key ---
-    if not na(pbKeyNow)
-        if na(pbRetryKey) or (pbRetryKey != pbKeyNow)
-            pbRetryKey        := pbKeyNow
-            pbRetryAttempts   := 0
-            pbRetryFailActive := false
-        pbRetryAttempts += 1
-
-    pbLastEntryWasPB := true
-    pbLastEntryKey   := pbKeyNow
     strategy.entry("LONG", strategy.long, comment="BULL_PB")
     label.new(
         bar_index,
@@ -3044,8 +2985,6 @@ if bullPBEnterExec
 
 
 else if bullCompEnter
-    pbLastEntryWasPB := false
-    pbLastEntryKey   := na
     strategy.entry("LONG", strategy.long, comment="BULL_COMP")
 
     posTag := "BULL"
@@ -3098,10 +3037,9 @@ else if bullCompEnter
     bullHH := na
     bullArmRollHigh := na
     bullHHBar := na
-    
+
+
 else if bullImpulseEnter
-    pbLastEntryWasPB := false
-    pbLastEntryKey   := na
     strategy.entry("LONG", strategy.long, comment="BULL_START")
 
     posTag := "BULL"
@@ -3193,8 +3131,6 @@ if barstate.isconfirmed and bullAddEnter
 
 
 if rangeAEnter
-    pbLastEntryWasPB := false
-    pbLastEntryKey   := na
     strategy.entry("LONG", strategy.long, comment="RANGE_A")
     posTag := "RANGEA"
     entryModeTag := "RANGE-A"
@@ -3678,11 +3614,6 @@ if exportToLogs and doExit
     L1_exitReason  := exitReason
     L1_regExit     := exitReg
 
-// --- PB_RETRY_FAIL latch: if the PB trade failed via BULL_INV, block subsequent PBs until a new major impulse key ---
-if doExit and (exitReason == "BULL_INV") and pbLastEntryWasPB and (not na(pbLastEntryKey))
-    pbRetryKey        := pbLastEntryKey
-    pbRetryFailActive := true
-
 
 // --- Execute full closes (no close_all) ---
 if doExit
@@ -3766,9 +3697,6 @@ if pendingReset and (not inPos)
     rbSPBSeen := false
     rbSPBBar  := na
     rbSValue  := na
-    pbLastEntryWasPB := false
-    pbLastEntryKey   := na
-
 
 
 //====================================================
