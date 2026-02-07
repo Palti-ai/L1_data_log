@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v5.112 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v5.113 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -111,6 +111,9 @@ bullPBStallNeedHighFail = input.bool(true, "Bull PB: stall requires HH progress 
 bullPBUseFreshness       = input.bool(true,  "PB Freshness veto (Impulse-Age)", group="Bull / PB", inline="PBF")
 bullPBMaxImpulseAgeBars  = input.int(18,     "Max bars since last impulse",     group="Bull / PB", inline="PBF", minval=1)
 bullPBFreshMinAgeBars    = input.int(24,     "Apply only if bull age >= bars",  group="Bull / PB", minval=0)
+// ---- PB Expansion-Age (NEW axis) ----
+bullPBUseExpAge          = input.bool(true,  "PB use Expansion-Age veto", group=grpBull)
+bullPBMaxExpAgeBars      = input.int(18,     "PB max bars since last expansion", group=grpBull, minval=1)
 
 // --- Bull Acceptance-Compression entry (no PB) ---
 bullCompOn = input.bool(true, "Bull COMP: enable acceptance-compression entry", group=grpBull)
@@ -2076,7 +2079,7 @@ const int PBV_LIFECYCLE   = 64
 const int PBV_LATE_STALL  = 128
 const int PBV_AGE         = 256
 const int PBV_FRESH       = 512
-
+const int PBV_EXPAGE = 1024
 
 // ---- Rolling buffers (keep last l2WindowBars bars of features) ----
 var array<int>   l2_bi   = array.new_int()
@@ -2344,6 +2347,8 @@ var int L2_pbFreshLateOk  = na   // 0/1
 var int L2_pbFreshVeto    = na   // 0/1
 var int L2_pbEnterExec    = na   // 0/1
 var int L2_pbVetoMask     = na   // PB-specific veto bitmask
+var int L2_pbExpAgeBars = na
+var int L2_pbExpAgeVeto = na
 var int    L2_dropCnt      = 0
 
 var bool l2HeaderDone = false
@@ -2710,6 +2715,14 @@ bool bullPBFreshnessLateOk =
 
 bool bullPBFreshVeto = bullPBUseFreshness and bullPBFreshnessLateOk and (bullPBImpulseAgeBars > bullPBMaxImpulseAgeBars)
 
+// --- PB Expansion-Age veto (NEW) ---
+// ExpansionAge = bars since last bull-leg structural expansion (new high)
+int bullPBExpAgeBars = na(bullLastExpansionBar) ? 999999 : (bar_index - bullLastExpansionBar)
+
+// We only apply this veto when PB is already "late-eligible" (same philosophy as Freshness)
+bool bullPBExpAgeVeto = bullPBUseExpAge and bullPBFreshnessLateOk and (bullPBExpAgeBars > bullPBMaxExpAgeBars)
+
+
 // Touch logic: by default allow "touch" (brings PB trades back). Optional strict mode requires reclaim close.
 bool bullPBTouchOk =
      (not bullPBRequireTouchEF) ? true :
@@ -2752,7 +2765,7 @@ bool bullPB_HHProofOk =
 
 
 // Final PB execution gate
-bool bullPBEnterExec = bullPBEnter and bullPBTouchOk and bullPB_HHProofOk and (bullPBScore >= bullPB_MinScore) and (not bullPBStallVeto) and (not bullPBExhaustVeto) and (not bullPBLateVeto) and (not bullPBLifecycleVeto) and (not bullPBLateStallVeto) and (not bullPBAgeVeto) and (not bullPBFreshVeto)
+bool bullPBEnterExec = bullPBEnter and bullPBTouchOk and bullPB_HHProofOk and (bullPBScore >= bullPB_MinScore) and (not bullPBStallVeto) and (not bullPBExhaustVeto) and (not bullPBLateVeto) and (not bullPBLifecycleVeto) and (not bullPBLateStallVeto) and (not bullPBAgeVeto) and (not bullPBFreshVeto) and (not bullPBExpAgeVeto)
 
 // ---- PBDEC veto mask (PB-specific) ----
 int pbVetoMask = 0
@@ -2766,6 +2779,7 @@ pbVetoMask += (bullPBLifecycleVeto ? PBV_LIFECYCLE : 0)
 pbVetoMask += (bullPBLateStallVeto ? PBV_LATE_STALL : 0)
 pbVetoMask += (bullPBAgeVeto ? PBV_AGE : 0)
 pbVetoMask += (bullPBFreshVeto ? PBV_FRESH : 0)
+pbVetoMask += (bullPBExpAgeVeto ? PBV_EXPAGE : 0)
 
 // ---- L2 window log: PB DECISION (exec OR blocked) ----
 if exportL2 and barstate.isconfirmed and bullPBEnter
@@ -2790,6 +2804,8 @@ if exportL2 and barstate.isconfirmed and bullPBEnter
         L2_pbFreshVeto   := bullPBFreshVeto ? 1 : 0
         L2_pbEnterExec   := bullPBEnterExec ? 1 : 0
         L2_pbVetoMask    := pbVetoMask
+        L2_pbExpAgeBars := bullPBExpAgeBars
+        L2_pbExpAgeVeto := bullPBExpAgeVeto ? 1 : 0
 
         int szPB = array.size(l2_bi)
         if szPB > 0
@@ -3163,6 +3179,8 @@ if barstate.isconfirmed
         float prevHi = nz(bullLegHi[1], na)
         bullLegHi := na(bullLegHi) ? high : math.max(bullLegHi, high)
         bool madeNewHi = (not na(prevHi)) and (bullLegHi > prevHi)
+        if madeNewHi
+            bullLastExpansionBar := bar_index
         bullLegNoNewHiStreak := madeNewHi ? 0 : (nz(bullLegNoNewHiStreak[1]) + 1)
     else
         bullLegHi := na
