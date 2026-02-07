@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.03 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.04 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -594,6 +594,8 @@ var int  pbLastPBEntryImpulseBar = na     // impulse bar used when we last enter
 var bool pbInPBTrade             = false  // whether current open position came from PB entry
 var int  pbRetryFailImpulseBar   = na     // impulse bar that is “blocked” due to prior PB->INV failure
 var bool pbRetryFailActive       = false  // true = block PB entries on that impulse
+var int  pbIdeaFailImpulseBar = na   // impulse bar that is “blocked” due to vetoed PBDEC idea-failure
+var bool pbIdeaFailActive     = false // true = block PB entries on that impulse
 
 // --- PB Freshness state ---
 var int bullLastMajorImpulseBar = na
@@ -2099,9 +2101,7 @@ const int PBV_EXPAGE = 1024
 const int PBV_IMPULSE_CHASE = 2048
 const int PBV_LATE_FAIL = 4096
 const int PBV_RETRY_FAIL = 8192
-
-
-
+const int PBV_IDEA_FAIL = 16384
 
 // ---- Rolling buffers (keep last l2WindowBars bars of features) ----
 var array<int>   l2_bi   = array.new_int()
@@ -2753,9 +2753,13 @@ int pbKeyNow = bullLastMajorImpulseBar
 
 // If a new major impulse key appears, reset attempts/fail latch for the new key.
 if (not na(pbKeyNow)) and (na(pbRetryKey) or (pbRetryKey != pbKeyNow))
-    pbRetryKey        := pbKeyNow
-    pbRetryAttempts   := 0
+    pbRetryKey := pbKeyNow
+    pbRetryAttempts := 0
     pbRetryFailActive := false
+    pbRetryFailImpulseBar := na
+    pbIdeaFailActive := false
+    pbIdeaFailImpulseBar := na
+
 
 int bullPBImpulseAgeBars = bullMajorImpulseAgeBars
 
@@ -2780,6 +2784,8 @@ bool bullPBExpAgeVeto = bullPBUseExpAge and bullPBFreshnessLateOk and (bullPBExp
 // --- PB Impulse-Chase veto (NEW) ---
 // Blocks PB entries that fire on the same bar as a new major impulse while ADX slope is rising.
 bool bullPBImpulseChaseVeto = pbMajorImpulse and (bullPBImpulseAgeBars == 0) and (adxSlopeNow > 0)
+
+bool bullPBIdeaFailVeto = pbIdeaFailActive and not na(pbIdeaFailImpulseBar) and (bullLastMajorImpulseBar == pbIdeaFailImpulseBar)
 
 // --- PB Retry-Fail veto (NEW) ---
 // Triggered only after the FIRST PB for this pbKeyNow ended with BULL_INV.
@@ -2840,7 +2846,7 @@ bool bullPB_HHProofOk =
 
 
 // Final PB execution gate
-bool bullPBEnterExec = bullPBEnter and bullPBTouchOk and bullPB_HHProofOk and (bullPBScore >= bullPB_MinScore) and (not bullPBStallVeto) and (not bullPBExhaustVeto) and (not bullPBLateVeto) and (not bullPBLifecycleVeto) and (not bullPBLateStallVeto) and (not bullPBAgeVeto) and (not bullPBFreshVeto) and (not bullPBExpAgeVeto) and (not bullPBImpulseChaseVeto) and (not bullPBLateFailVeto)
+bool bullPBEnterExec = bullPBEnter and bullPBTouchOk and bullPB_HHProofOk and (bullPBScore >= bullPB_MinScore) and (not bullPBStallVeto) and (not bullPBExhaustVeto) and (not bullPBLateVeto) and (not bullPBLifecycleVeto) and (not bullPBLateStallVeto) and (not bullPBAgeVeto) and (not bullPBFreshVeto) and (not bullPBExpAgeVeto) and (not bullPBImpulseChaseVeto) and (not bullPBIdeaFailVeto) and (not bullPBLateFailVeto)
 
 // ---- PBDEC veto mask (PB-specific) ----
 int pbVetoMask = 0
@@ -2858,7 +2864,17 @@ pbVetoMask += (bullPBExpAgeVeto ? PBV_EXPAGE : 0)
 pbVetoMask += (bullPBImpulseChaseVeto ? PBV_IMPULSE_CHASE : 0)
 pbVetoMask += (bullPBLateFailVeto ? PBV_LATE_FAIL : 0)
 pbVetoMask += (bullPBRetryFailVeto ? PBV_RETRY_FAIL : 0)
+pbVetoMask += (bullPBIdeaFailVeto ? PBV_IDEA_FAIL : 0)
 
+// --- PB_IDEA_FAIL latch (NEW) ---
+// If PBDEC was vetoed on the impulse bar due to IMPULSE_CHASE (2048) or LATE_FAIL (4096),
+// then block subsequent PB attempts on this same bullLastMajorImpulseBar until a new impulse appears.
+int pbIdeaFailBits = PBV_IMPULSE_CHASE | PBV_LATE_FAIL
+bool pbIdeaFailNow = (not pbEnterExec) and pbMajorImpulseNow and ((pbVetoMask & pbIdeaFailBits) != 0)
+
+if pbIdeaFailNow
+    pbIdeaFailActive     := true
+    pbIdeaFailImpulseBar := bullLastMajorImpulseBar
 
 // ---- L2 window log: PB DECISION (exec OR blocked) ----
 if exportL2 and barstate.isconfirmed and bullPBEnter
