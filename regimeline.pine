@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.05 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.06 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -2767,7 +2767,7 @@ bool bullPBExpAgeVeto = bullPBUseExpAge and bullPBFreshnessLateOk and (bullPBExp
 // Blocks PB entries that fire on the same bar as a new major impulse while ADX slope is rising.
 bool bullPBImpulseChaseVeto = pbMajorImpulse and (bullPBImpulseAgeBars == 0) and (adxSlopeNow > 0)
 // NEW: latch failed PB idea only when we actually ATTEMPTED PB on the impulse bar and got impulse-chase veto
-if barstate.isconfirmed and bullPBEnter and bullPBImpulseChaseVeto
+if barstate.isconfirmed and bullPBImpulseChaseVeto
     pbChaseFailActive := true
     pbChaseFailKey := bullLastMajorImpulseBar
 
