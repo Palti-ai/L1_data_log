@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.01 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.05 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -593,6 +593,9 @@ var float bullArmRollHigh = na   // Option C: rollHigh snapshot at arm (accept-u
 
 // --- PB Freshness state ---
 var int bullLastMajorImpulseBar = na
+// --- PB Retry-after-Impulse-Chase latch (blocks retry PBs on same impulse after impulse-chase veto) ---
+var int  pbChaseFailKey    = na
+var bool pbChaseFailActive = false
 
 float bullTrailLevel = na
 // --- Bull impulse entry one-shot latch ---
@@ -2086,6 +2089,8 @@ const int PBV_FRESH       = 512
 const int PBV_EXPAGE = 1024
 const int PBV_IMPULSE_CHASE = 2048
 const int PBV_LATE_FAIL = 4096
+const int PBV_RETRY_CHASE = 8192
+
 
 
 
@@ -2707,6 +2712,10 @@ bool pbMajorImpulse =
 // 4) update last major impulse AFTER we captured agePrev
 if pbMajorImpulse
     bullLastMajorImpulseBar := bar_index
+    // NEW: a new impulse resets the retry-chase latch
+if barstate.isconfirmed and pbMajorImpulse
+    pbChaseFailActive := false
+    pbChaseFailKey := na
 
 // --- PB Freshness veto (Impulse-Age) (NEW) ---
 // "Impulse age" = bars since the last detected impulse (from L2 state)
@@ -2757,7 +2766,12 @@ bool bullPBExpAgeVeto = bullPBUseExpAge and bullPBFreshnessLateOk and (bullPBExp
 // --- PB Impulse-Chase veto (NEW) ---
 // Blocks PB entries that fire on the same bar as a new major impulse while ADX slope is rising.
 bool bullPBImpulseChaseVeto = pbMajorImpulse and (bullPBImpulseAgeBars == 0) and (adxSlopeNow > 0)
+// NEW: latch failed PB idea only when we actually ATTEMPTED PB on the impulse bar and got impulse-chase veto
+if barstate.isconfirmed and bullPBEnter and bullPBImpulseChaseVeto
+    pbChaseFailActive := true
+    pbChaseFailKey := bullLastMajorImpulseBar
 
+bool bullPBRetryAfterChaseVeto = pbChaseFailActive and (bullLastMajorImpulseBar == pbChaseFailKey) and (bullPBImpulseAgeBars > 0)
 
 // Touch logic: by default allow "touch" (brings PB trades back). Optional strict mode requires reclaim close.
 bool bullPBTouchOk =
@@ -2809,7 +2823,7 @@ bool bullPB_HHProofOk =
 
 
 // Final PB execution gate
-bool bullPBEnterExec = bullPBEnter and bullPBTouchOk and bullPB_HHProofOk and (bullPBScore >= bullPB_MinScore) and (not bullPBStallVeto) and (not bullPBExhaustVeto) and (not bullPBLateVeto) and (not bullPBLifecycleVeto) and (not bullPBLateStallVeto) and (not bullPBAgeVeto) and (not bullPBFreshVeto) and (not bullPBExpAgeVeto) and (not bullPBImpulseChaseVeto) and (not bullPBLateFailVeto)
+bool bullPBEnterExec = bullPBEnter and bullPBTouchOk and bullPB_HHProofOk and (bullPBScore >= bullPB_MinScore) and (not bullPBStallVeto) and (not bullPBExhaustVeto) and (not bullPBLateVeto) and (not bullPBLifecycleVeto) and (not bullPBLateStallVeto) and (not bullPBAgeVeto) and (not bullPBFreshVeto) and (not bullPBExpAgeVeto) and (not bullPBImpulseChaseVeto) and (not bullPBLateFailVeto) and (not bullPBRetryAfterChaseVeto)
 
 // ---- PBDEC veto mask (PB-specific) ----
 int pbVetoMask = 0
@@ -2825,6 +2839,7 @@ pbVetoMask += (bullPBAgeVeto ? PBV_AGE : 0)
 pbVetoMask += (bullPBFreshVeto ? PBV_FRESH : 0)
 pbVetoMask += (bullPBExpAgeVeto ? PBV_EXPAGE : 0)
 pbVetoMask += (bullPBImpulseChaseVeto ? PBV_IMPULSE_CHASE : 0)
+pbVetoMask += (bullPBRetryAfterChaseVeto ? PBV_RETRY_CHASE : 0)
 pbVetoMask += (bullPBLateFailVeto ? PBV_LATE_FAIL : 0)
 
 // ---- L2 window log: PB DECISION (exec OR blocked) ----
