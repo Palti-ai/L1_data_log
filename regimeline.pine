@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.07 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.08 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -635,6 +635,9 @@ var int L1_pbStallCountEnt       = na
 var int L1_pbHighFailEnt         = na   // 1/0
 var int L1_pbScoreEnt            = na
 
+// L1-only: defer PB snapshot reset until AFTER L1 closedtrades rows are emitted on the flat bar
+var bool L1_pbResetPending = false
+
 // --- “Pending” snapshot (captured at signal bar, then copied on actual entry) ---
 var string   L1_pendMode        = na
 var float L1_pendModeScore   = na
@@ -897,14 +900,9 @@ sigOrId(_comment, _id) =>
 posOpened = barstate.isconfirmed and (strategy.position_size != 0) and (strategy.position_size[1] == 0)
 posClosed = barstate.isconfirmed and (strategy.position_size == 0) and (strategy.position_size[1] != 0)
 
-// Reset PB snapshot whenever flat (prevents carry-over into the next trade)
-if barstate.isconfirmed and (strategy.position_size == 0)
-    L1_pbVetoMaskEnt       := na
-    L1_pbMajorImpulseEnt   := na
-    L1_pbImpulseAgeBarsEnt := na
-    L1_pbStallCountEnt     := na
-    L1_pbHighFailEnt       := na
-    L1_pbScoreEnt          := na
+// L1-only: defer PB snapshot reset until AFTER L1 closedtrades rows are emitted on the flat bar
+if posClosed
+    L1_pbResetPending := true
 
 //====================================================
 // L1: TradingView Trade List 1:1 logging
@@ -1076,6 +1074,15 @@ if exportToLogs and barstate.isconfirmed
 
         // Advance the emitted pointer
         L1_ctLogged := ctNow
+        // Apply deferred PB snapshot reset only after L1 has logged the newly closed trade rows
+        if L1_pbResetPending and (strategy.position_size == 0)
+            L1_pbVetoMaskEnt       := na
+            L1_pbMajorImpulseEnt   := na
+            L1_pbImpulseAgeBarsEnt := na
+            L1_pbStallCountEnt     := na
+            L1_pbHighFailEnt       := na
+            L1_pbScoreEnt          := na
+            L1_pbResetPending := false
 
 
 //====================================================
