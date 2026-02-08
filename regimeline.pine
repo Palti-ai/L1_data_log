@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.06 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.07 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -2954,15 +2954,12 @@ if exportToLogs and dbgPBProbe and barstate.isconfirmed and bullPBEnter and (dbg
     str.tostring(bullArmed ? 1 : 0)
 )
 
-
-
 // --- PB-Guard v2 (exhaustion micro-PB filter) ---
-
 
 if bullPBEnterExec
     // ---- L1 PB snapshot latched at PB fill (so L1 row can carry PBDEC context) ----
     L1_pbVetoMaskEnt       := pbVetoMask
-    L1_pbMajorImpulseEnt   := pbMajorImpulseNow ? 1 : 0
+    L1_pbMajorImpulseEnt   := pbMajorImpulse ? 1 : 0
     L1_pbImpulseAgeBarsEnt := bullPBImpulseAgeBars
     L1_pbStallCountEnt     := pbStallCount
     L1_pbHighFailEnt       := pbHighFail ? 1 : 0
