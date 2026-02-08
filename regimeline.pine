@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.09 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.10 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -2145,7 +2145,7 @@ const int PBV_EXPAGE = 1024
 const int PBV_IMPULSE_CHASE = 2048
 const int PBV_LATE_FAIL = 4096
 const int PBV_RETRY_CHASE = 8192
-
+const int PBV_EARLY_ASSUME = 32768
 
 
 
@@ -2853,6 +2853,29 @@ bool pbHighFail =
      (not bullPBStallNeedHighFail) or
      (pbHighMax <= pbHighMaxPrev)
 
+// ================================
+// PB Early-Assumption veto (cross-coin, log-proven)
+// Kills PB entries when continuation is assumed before expansion maturity + absorption.
+// ================================
+bool pbVeto_EarlyStall_A =
+     (bullPBExpAgeBars <= 2) and (pbStallCount == 3) and (bullPBAgeBars <= 6)
+
+bool pbVeto_EarlyStall_B =
+     (bullPBExpAgeBars <= 1) and (pbStallCount == 3) and (bullPBAgeBars >= 7) and (adxSlopeNow <= 3.5)
+
+bool pbVeto_MajorImpulseWeak =
+     pbMajorImpulse and (bullPBExpAgeBars <= 2) and (adxSlopeNow <= 0)
+
+bool pbVeto_VeryEarlyNoAbsorb =
+     (bullPBExpAgeBars <= 1) and (bullPBAgeBars <= 2) and (pbStallCount <= 1)
+
+bool pbVeto_LongStallNoHH =
+     (bullLegNoNewHiStreak >= 5) and (pbStallCount <= 1) and (bullPBAgeBars <= 5)
+
+bool bullPBEarlyAssumeVeto =
+     pbVeto_EarlyStall_A or pbVeto_EarlyStall_B or pbVeto_MajorImpulseWeak or pbVeto_VeryEarlyNoAbsorb or pbVeto_LongStallNoHH
+
+
 // --- PB Failed-Continuation veto (NEW) ---
 // Blocks late PB attempts that stall (many small bodies) and fail to progress highs.
 bool bullPBLateFailVeto =
@@ -2879,7 +2902,8 @@ bool bullPB_HHProofOk =
 
 
 // Final PB execution gate
-bool bullPBEnterExec = bullPBEnter and bullPBTouchOk and bullPB_HHProofOk and (bullPBScore >= bullPB_MinScore) and (not bullPBStallVeto) and (not bullPBExhaustVeto) and (not bullPBLateVeto) and (not bullPBLifecycleVeto) and (not bullPBLateStallVeto) and (not bullPBAgeVeto) and (not bullPBFreshVeto) and (not bullPBExpAgeVeto) and (not bullPBImpulseChaseVeto) and (not bullPBLateFailVeto) and (not bullPBRetryAfterChaseVeto)
+bool bullPBEnterExec = bullPBEnter and bullPBTouchOk and bullPB_HHProofOk and (bullPBScore >= bullPB_MinScore) and (not bullPBStallVeto) and (not bullPBExhaustVeto) and (not bullPBLateVeto) and (not bullPBLifecycleVeto) and (not bullPBLateStallVeto) and (not bullPBAgeVeto) and (not bullPBFreshVeto) and (not bullPBExpAgeVeto) and (not bullPBImpulseChaseVeto) and (not bullPBLateFailVeto) and (not bullPBRetryAfterChaseVeto) and (not bullPBEarlyAssumeVeto)
+
 
 // ---- PBDEC veto mask (PB-specific) ----
 int pbVetoMask = 0
@@ -2897,6 +2921,8 @@ pbVetoMask += (bullPBExpAgeVeto ? PBV_EXPAGE : 0)
 pbVetoMask += (bullPBImpulseChaseVeto ? PBV_IMPULSE_CHASE : 0)
 pbVetoMask += (bullPBRetryAfterChaseVeto ? PBV_RETRY_CHASE : 0)
 pbVetoMask += (bullPBLateFailVeto ? PBV_LATE_FAIL : 0)
+pbVetoMask += (bullPBEarlyAssumeVeto ? PBV_EARLY_ASSUME : 0)
+
 
 // ---- L2 window log: PB DECISION (exec OR blocked) ----
 if exportL2 and barstate.isconfirmed and bullPBEnter
