@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.08 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.09 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -635,6 +635,15 @@ var int L1_pbStallCountEnt       = na
 var int L1_pbHighFailEnt         = na   // 1/0
 var int L1_pbScoreEnt            = na
 
+// ---- PB ENTRY SNAPSHOT (expanded) ----
+var float L1_pbAdxSlopeEnt       = na
+var int   L1_pbAgeBarsEnt        = na
+var int   L1_pbNoNewHiStreakEnt  = na
+var float L1_pbDepthAtrEnt       = na
+var int   L1_pbExpAgeBarsEnt     = na
+var int   L1_pbTouchOkEnt        = na // 1/0
+var int   L1_pbHHProofOkEnt      = na // 1/0
+
 // L1-only: defer PB snapshot reset until AFTER L1 closedtrades rows are emitted on the flat bar
 var bool L1_pbResetPending = false
 
@@ -857,7 +866,8 @@ if exportToLogs and barstate.isfirst
 
       // ---- MONETIZATION / MANAGEMENT ----
       "tp1Hit,trailEver,addCount," +
-      "pbVetoMaskEnt,pbMajorImpulseEnt,pbImpulseAgeBarsEnt,pbStallCountEnt,pbHighFailEnt,pbScoreEnt" 
+      "pbVetoMaskEnt,pbMajorImpulseEnt,pbImpulseAgeBarsEnt,pbStallCountEnt,pbHighFailEnt,pbScoreEnt," +
+      "pbAdxSlopeEnt,pbAgeBarsEnt,pbNoNewHiStreakEnt,pbDepthAtrEnt,pbExpAgeBarsEnt,pbTouchOkEnt,pbHHProofOkEnt"
       )
 
 
@@ -1069,7 +1079,14 @@ if exportToLogs and barstate.isconfirmed
                  str.tostring(L1_pbImpulseAgeBarsEnt) + "," +
                  str.tostring(L1_pbStallCountEnt) + "," +
                  str.tostring(L1_pbHighFailEnt) + "," +
-                 str.tostring(L1_pbScoreEnt) 
+                 str.tostring(L1_pbScoreEnt) + "," + 
+                 str.tostring(L1_pbAdxSlopeEnt) + "," + 
+                 str.tostring(L1_pbAgeBarsEnt) + "," + 
+                 str.tostring(L1_pbNoNewHiStreakEnt) + "," + 
+                 str.tostring(L1_pbDepthAtrEnt) + "," + 
+                 str.tostring(L1_pbExpAgeBarsEnt) + "," + 
+                 str.tostring(L1_pbTouchOkEnt) + "," + 
+                 str.tostring(L1_pbHHProofOkEnt)
             )
 
         // Advance the emitted pointer
@@ -1082,8 +1099,14 @@ if exportToLogs and barstate.isconfirmed
             L1_pbStallCountEnt     := na
             L1_pbHighFailEnt       := na
             L1_pbScoreEnt          := na
+            L1_pbAdxSlopeEnt := na
+            L1_pbAgeBarsEnt := na
+            L1_pbNoNewHiStreakEnt := na
+            L1_pbDepthAtrEnt := na
+            L1_pbExpAgeBarsEnt := na
+            L1_pbTouchOkEnt := na
+            L1_pbHHProofOkEnt := na
             L1_pbResetPending := false
-
 
 //====================================================
 // Bull ADD diagnostics — counters (must be declared BEFORE bullAddEnter is computed)
@@ -2971,6 +2994,13 @@ if bullPBEnterExec
     L1_pbStallCountEnt     := pbStallCount
     L1_pbHighFailEnt       := pbHighFail ? 1 : 0
     L1_pbScoreEnt          := bullPBScore
+    L1_pbAdxSlopeEnt      := adxSlopeNow
+    L1_pbAgeBarsEnt       := bullPBAgeBars
+    L1_pbNoNewHiStreakEnt := bullLegNoNewHiStreak
+    L1_pbDepthAtrEnt      := bullPBDepth / atr
+    L1_pbExpAgeBarsEnt    := bullPBExpAgeBars
+    L1_pbTouchOkEnt       := bullPBTouchOk ? 1 : 0
+    L1_pbHHProofOkEnt     := bullPB_HHProofOk ? 1 : 0
     strategy.entry("LONG", strategy.long, comment="BULL_PB")
     label.new(
         bar_index,
