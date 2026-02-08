@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.05 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.06 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -627,6 +627,14 @@ var int   L1_addCount      = 0
 var bool  L1_tp1Hit        = false
 var bool  L1_trailEver     = false
 
+// ---- PB ENTRY SNAPSHOT (latched at PB fill; na for non-PB trades) ----
+var int L1_pbVetoMaskEnt         = na
+var int L1_pbMajorImpulseEnt     = na   // 1/0
+var int L1_pbImpulseAgeBarsEnt   = na
+var int L1_pbStallCountEnt       = na
+var int L1_pbHighFailEnt         = na   // 1/0
+var int L1_pbScoreEnt            = na
+
 // --- “Pending” snapshot (captured at signal bar, then copied on actual entry) ---
 var string   L1_pendMode        = na
 var float L1_pendModeScore   = na
@@ -845,8 +853,10 @@ if exportToLogs and barstate.isfirst
       "bsiAtEntry,bsaAtEntry,bsrAtEntry," +
 
       // ---- MONETIZATION / MANAGEMENT ----
-      "tp1Hit,trailEver,addCount"
-    )
+      "tp1Hit,trailEver,addCount," +
+      "pbVetoMaskEnt,pbMajorImpulseEnt,pbImpulseAgeBarsEnt,pbStallCountEnt,pbHighFailEnt,pbScoreEnt" 
+      )
+
 
 // PBDBG header (separate stream; rowType=PBDBG)
 if exportToLogs and dbgPBProbe and barstate.isfirst
@@ -886,6 +896,15 @@ sigOrId(_comment, _id) =>
 //------------------------------
 posOpened = barstate.isconfirmed and (strategy.position_size != 0) and (strategy.position_size[1] == 0)
 posClosed = barstate.isconfirmed and (strategy.position_size == 0) and (strategy.position_size[1] != 0)
+
+// Reset PB snapshot whenever flat (prevents carry-over into the next trade)
+if barstate.isconfirmed and (strategy.position_size == 0)
+    L1_pbVetoMaskEnt       := na
+    L1_pbMajorImpulseEnt   := na
+    L1_pbImpulseAgeBarsEnt := na
+    L1_pbStallCountEnt     := na
+    L1_pbHighFailEnt       := na
+    L1_pbScoreEnt          := na
 
 //====================================================
 // L1: TradingView Trade List 1:1 logging
@@ -1044,9 +1063,15 @@ if exportToLogs and barstate.isconfirmed
                  str.tostring(L1_bsrEnt) + "," +
 
                  // Monetization/management flags (still meaningful)
-                 str.tostring(L1_tp1Hit) + "," +
-                 str.tostring(L1_trailEver) + "," +
-                 str.tostring(L1_addCount)
+                 str.tostring(L1_tp1Hit) + "," + 
+                 str.tostring(L1_trailEver) + "," + 
+                 str.tostring(L1_addCount) + "," +
+                 str.tostring(L1_pbVetoMaskEnt) + "," +
+                 str.tostring(L1_pbMajorImpulseEnt) + "," +
+                 str.tostring(L1_pbImpulseAgeBarsEnt) + "," +
+                 str.tostring(L1_pbStallCountEnt) + "," +
+                 str.tostring(L1_pbHighFailEnt) + "," +
+                 str.tostring(L1_pbScoreEnt) 
             )
 
         // Advance the emitted pointer
@@ -2935,6 +2960,13 @@ if exportToLogs and dbgPBProbe and barstate.isconfirmed and bullPBEnter and (dbg
 
 
 if bullPBEnterExec
+    // ---- L1 PB snapshot latched at PB fill (so L1 row can carry PBDEC context) ----
+    L1_pbVetoMaskEnt       := pbVetoMask
+    L1_pbMajorImpulseEnt   := pbMajorImpulseNow ? 1 : 0
+    L1_pbImpulseAgeBarsEnt := bullPBImpulseAgeBars
+    L1_pbStallCountEnt     := pbStallCount
+    L1_pbHighFailEnt       := pbHighFail ? 1 : 0
+    L1_pbScoreEnt          := bullPBScore
     strategy.entry("LONG", strategy.long, comment="BULL_PB")
     label.new(
         bar_index,
