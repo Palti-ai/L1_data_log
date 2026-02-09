@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.15 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.14 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -1335,8 +1335,7 @@ if bearAcceptOk
 
 bearAcceptVetoLowAdx = (adx < 20)
 bearAcceptVetoWeakWickPrev = (not na(adx[1])) and (not na(bodyPct[1])) and (adx[1] < 20) and (bodyPct[1] < 0.12)
-bearAcceptNoChaseOk = (atr > 0) and (not na(bearBreakLvl)) and ((bearBreakLvl - close) <= (atr * 0.75))
-bearAcceptImpulseEnter = barstate.isconfirmed and (not inPos) and bearShortOn and bearAcceptEntryOn and (bearActive and not na(bearAcceptedBar) and (bar_index == bearAcceptedBar)) and shortCooldownOk and bearShortADXOk and (adx >= bearShortADXMin) and (close < bearBreakLvl) and (close < open) and (bodyPct >= bearMinBodyPct) and bearCloseNearLowOk and (not bearAcceptVetoWeakWickPrev) and bearAcceptNoChaseOk
+bearAcceptImpulseEnter = barstate.isconfirmed and (not inPos) and bearShortOn and bearAcceptEntryOn and (bearActive and not na(bearAcceptedBar) and (bar_index == bearAcceptedBar)) and shortCooldownOk and bearShortADXOk and (adx >= bearShortADXMin) and (close < bearBreakLvl) and (close < open) and (bodyPct >= bearMinBodyPct) and bearCloseNearLowOk and (not bearAcceptVetoLowAdx)
 
 // Cancel pendingBear if price reclaims above the reclaim level (close-based truth)
 bearPendingCancel = pendingBear and not na(bearReclLvl) and (close > bearReclLvl) and (not bearNeed2Cl or close[1] > bearReclLvl)
