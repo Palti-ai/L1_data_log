@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.13 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.14 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -471,22 +471,7 @@ closeLoc = (rng > 0) ? ((close - low) / rng) : 0.5
 bearCloseNearLowOk = closeLoc <= bearShortCloseNearLo
 rbCloseNearLowOk   = closeLoc <= rbShortCloseNearLo
 
-//====================================================
-// BEAR diagnostics masks (LOG ONLY; no behavior impact)
-// allowMask: which “good” gates were true
-// vetoMask : which “blocking” conditions were true
-//====================================================
-int bearAllowMaskNow = 0
-bearAllowMaskNow += bearShortADXOk ? 1 : 0              // bit 0: ADX ok
-bearAllowMaskNow += bearCloseNearLowOk ? 2 : 0          // bit 1: close near low ok
-bearAllowMaskNow += (not htfOnNow) ? 4 : 0              // bit 2: HTF not ON
-bearAllowMaskNow += (pendingBear or bearActive) ? 8 : 0 // bit 3: bear context present
 
-int bearVetoMaskNow = 0
-bearVetoMaskNow += (not bearShortADXOk) ? 1 : 0
-bearVetoMaskNow += (not bearCloseNearLowOk) ? 2 : 0
-bearVetoMaskNow += (htfOnNow) ? 4 : 0
-bearVetoMaskNow += (not (pendingBear or bearActive)) ? 8 : 0
 
 inPos   = strategy.position_size != 0
 isLong  = strategy.position_size > 0
@@ -576,6 +561,24 @@ var float bearEndY     = na
 var bool  bearPBSeen    = false
 var int   bearPBBar     = na
 var int   lastBearShortExitBar = na   // Change 2: re-entry throttle
+
+//====================================================
+// BEAR diagnostics masks (LOG ONLY; no behavior impact)
+// allowMask: which “good” gates were true
+// vetoMask : which “blocking” conditions were true
+//====================================================
+int bearAllowMaskNow = 0
+bearAllowMaskNow += bearShortADXOk ? 1 : 0              // bit 0: ADX ok
+bearAllowMaskNow += bearCloseNearLowOk ? 2 : 0          // bit 1: close near low ok
+bearAllowMaskNow += (not htfOnNow) ? 4 : 0              // bit 2: HTF not ON
+bearAllowMaskNow += (pendingBear or bearActive) ? 8 : 0 // bit 3: bear context present
+
+int bearVetoMaskNow = 0
+bearVetoMaskNow += (not bearShortADXOk) ? 1 : 0
+bearVetoMaskNow += (not bearCloseNearLowOk) ? 2 : 0
+bearVetoMaskNow += (htfOnNow) ? 4 : 0
+bearVetoMaskNow += (not (pendingBear or bearActive)) ? 8 : 0
+
 var int bearReclaimCloseCnt = 0
 var int   lastRBShortExitBar = na
 
@@ -748,26 +751,6 @@ var float tradeLo      = na
 // Defer resets until we are truly flat (calc_on_every_tick safety)
 var bool pendingReset = false
 var bool bearForceCloseShort = false
-
-//====================================================
-// L1 — BEAR ENTRY DIAGNOSTICS (committed at posOpened; logging only)
-//====================================================
-// Ints (0/1) for CSV stability.
-var int   L1_bearPendingEnt      = na
-var int   L1_bearActiveEnt       = na
-var float L1_bearBreakLvlEnt     = na
-var float L1_bearReclLvlEnt      = na
-var int   L1_bearReclaimCntEnt   = na
-var int   L1_bearPBSeenEnt       = na
-var int   L1_bearPBBarEnt        = na
-var int   L1_lastBearExitBarEnt  = na
-var int   L1_bearShortADXOkEnt   = na
-var int   L1_bearCloseNearLowEnt = na
-var float L1_bearAdxSlopeEnt     = na
-var int   L1_bearHtfOnEnt        = na
-var string L1_bearHtfFlipEnt     = ""
-var int   L1_bearAllowMaskEnt    = na
-var int   L1_bearVetoMaskEnt     = na
 
 //====================================================
 // LAYER 1 — Trade-level CSV export to Pine Logs
@@ -984,7 +967,7 @@ if posOpened
     L1_acceptUpEnt := L1_pendAcceptUpCnt
     L1_qualMaskEnt := L1_pendQualMask
 
-    // Full context snapshot (copied from pending)
+    // Full context snapshot (copied from pending) 
     L1_modeEnt      := L1_pendMode
     L1_modeScoreEnt := L1_pendModeScore
     L1_adxEnt       := L1_pendAdx
@@ -1350,15 +1333,8 @@ if bearAcceptOk
     //bearJustAccepted = bearActive and not na(bearAcceptedBar) and (bar_index == bearAcceptedBar)
     bearPBBar  := na
 
-bearAcceptImpulseEnter =
-     barstate.isconfirmed and (not inPos) and bearShortOn and bearAcceptEntryOn and
-     (bearActive and not na(bearAcceptedBar) and (bar_index == bearAcceptedBar)) and
-     shortCooldownOk and
-     bearShortADXOk and (adx >= bearShortADXMin) and
-     (close < bearBreakLvl) and (close < open) and (bodyPct >= bearMinBodyPct) and
-     bearCloseNearLowOk
-
-
+bearAcceptVetoWeakWickPrev = (not na(adx[1])) and (not na(bodyPct[1])) and (adx[1] < 20) and (bodyPct[1] < 0.12)
+bearAcceptImpulseEnter = barstate.isconfirmed and (not inPos) and bearShortOn and bearAcceptEntryOn and (bearActive and not na(bearAcceptedBar) and (bar_index == bearAcceptedBar)) and shortCooldownOk and bearShortADXOk and (adx >= bearShortADXMin) and (close < bearBreakLvl) and (close < open) and (bodyPct >= bearMinBodyPct) and bearCloseNearLowOk and (not bearAcceptVetoWeakWickPrev)
 
 // Cancel pendingBear if price reclaims above the reclaim level (close-based truth)
 bearPendingCancel = pendingBear and not na(bearReclLvl) and (close > bearReclLvl) and (not bearNeed2Cl or close[1] > bearReclLvl)
