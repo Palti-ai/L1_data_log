@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.12 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.13 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -471,12 +471,26 @@ closeLoc = (rng > 0) ? ((close - low) / rng) : 0.5
 bearCloseNearLowOk = closeLoc <= bearShortCloseNearLo
 rbCloseNearLowOk   = closeLoc <= rbShortCloseNearLo
 
+//====================================================
+// BEAR diagnostics masks (LOG ONLY; no behavior impact)
+// allowMask: which “good” gates were true
+// vetoMask : which “blocking” conditions were true
+//====================================================
+int bearAllowMaskNow = 0
+bearAllowMaskNow += bearShortADXOk ? 1 : 0              // bit 0: ADX ok
+bearAllowMaskNow += bearCloseNearLowOk ? 2 : 0          // bit 1: close near low ok
+bearAllowMaskNow += (not htfOnNow) ? 4 : 0              // bit 2: HTF not ON
+bearAllowMaskNow += (pendingBear or bearActive) ? 8 : 0 // bit 3: bear context present
+
+int bearVetoMaskNow = 0
+bearVetoMaskNow += (not bearShortADXOk) ? 1 : 0
+bearVetoMaskNow += (not bearCloseNearLowOk) ? 2 : 0
+bearVetoMaskNow += (htfOnNow) ? 4 : 0
+bearVetoMaskNow += (not (pendingBear or bearActive)) ? 8 : 0
 
 inPos   = strategy.position_size != 0
 isLong  = strategy.position_size > 0
 isShort = strategy.position_size < 0
-
-
 
 //====================================================
 // Mode enum + helpers
@@ -649,6 +663,23 @@ var int   L1_pbExpAgeBarsEnt     = na
 var int   L1_pbTouchOkEnt        = na // 1/0
 var int   L1_pbHHProofOkEnt      = na // 1/0
 
+// ---- BEAR ENTRY SNAPSHOT (committed at fill; na for non-BEAR trades) ----
+var int   L1_bearPendingEnt      = na
+var int   L1_bearActiveEnt       = na
+var float L1_bearBreakLvlEnt     = na
+var float L1_bearReclLvlEnt      = na
+var int   L1_bearReclaimCntEnt   = na
+var int   L1_bearPBSeenEnt       = na
+var int   L1_bearPBBarEnt        = na
+var int   L1_lastBearExitBarEnt  = na
+var int   L1_bearShortADXOkEnt   = na
+var int   L1_bearCloseNearLowEnt = na
+var float L1_bearAdxSlopeEnt     = na
+var int   L1_bearHtfOnEnt        = na
+var string L1_bearHtfFlipEnt     = ""
+var int   L1_bearAllowMaskEnt    = na
+var int   L1_bearVetoMaskEnt     = na
+
 // L1-only: defer PB snapshot reset until AFTER L1 closedtrades rows are emitted on the flat bar
 var bool L1_pbResetPending = false
 
@@ -718,6 +749,25 @@ var float tradeLo      = na
 var bool pendingReset = false
 var bool bearForceCloseShort = false
 
+//====================================================
+// L1 — BEAR ENTRY DIAGNOSTICS (committed at posOpened; logging only)
+//====================================================
+// Ints (0/1) for CSV stability.
+var int   L1_bearPendingEnt      = na
+var int   L1_bearActiveEnt       = na
+var float L1_bearBreakLvlEnt     = na
+var float L1_bearReclLvlEnt      = na
+var int   L1_bearReclaimCntEnt   = na
+var int   L1_bearPBSeenEnt       = na
+var int   L1_bearPBBarEnt        = na
+var int   L1_lastBearExitBarEnt  = na
+var int   L1_bearShortADXOkEnt   = na
+var int   L1_bearCloseNearLowEnt = na
+var float L1_bearAdxSlopeEnt     = na
+var int   L1_bearHtfOnEnt        = na
+var string L1_bearHtfFlipEnt     = ""
+var int   L1_bearAllowMaskEnt    = na
+var int   L1_bearVetoMaskEnt     = na
 
 //====================================================
 // LAYER 1 — Trade-level CSV export to Pine Logs
@@ -872,7 +922,9 @@ if exportToLogs and barstate.isfirst
       // ---- MONETIZATION / MANAGEMENT ----
       "tp1Hit,trailEver,addCount," +
       "pbVetoMaskEnt,pbMajorImpulseEnt,pbImpulseAgeBarsEnt,pbStallCountEnt,pbHighFailEnt,pbScoreEnt," +
-      "pbAdxSlopeEnt,pbAgeBarsEnt,pbNoNewHiStreakEnt,pbDepthAtrEnt,pbExpAgeBarsEnt,pbTouchOkEnt,pbHHProofOkEnt"
+      "pbAdxSlopeEnt,pbAgeBarsEnt,pbNoNewHiStreakEnt,pbDepthAtrEnt,pbExpAgeBarsEnt,pbTouchOkEnt,pbHHProofOkEnt," +
+      "bearPendingEnt,bearActiveEnt,bearBreakLvlEnt,bearReclLvlEnt,bearReclaimCntEnt,bearPBSeenEnt,bearPBBarEnt,lastBearExitBarEnt," +
+      "bearShortADXOkEnt,bearCloseNearLowEnt,bearAdxSlopeEnt,bearHtfOnEnt,bearHtfFlipEnt,bearAllowMaskEnt,bearVetoMaskEnt"
       )
 
 
@@ -914,6 +966,78 @@ sigOrId(_comment, _id) =>
 //------------------------------
 posOpened = barstate.isconfirmed and (strategy.position_size != 0) and (strategy.position_size[1] == 0)
 posClosed = barstate.isconfirmed and (strategy.position_size == 0) and (strategy.position_size[1] != 0)
+
+//------------------------------
+// L1: commit pending entry snapshot on actual fill (posOpened)
+//------------------------------
+if posOpened
+    // Core committed entry diagnostics
+    L1_coin        := str.replace_all(syminfo.ticker, ",", ";")
+    L1_dir         := L1_pendDir
+    L1_regEntry    := L1_pendReg
+    L1_arch        := L1_pendArch
+
+    L1_entryEngine := L1_pendEntryEngine
+    L1_htfStateEnt := L1_pendHtfState
+    L1_htfFlipEnt  := L1_pendHtfFlipEvent
+    L1_lastFlipEnt := L1_pendLastFlipType
+    L1_acceptUpEnt := L1_pendAcceptUpCnt
+    L1_qualMaskEnt := L1_pendQualMask
+
+    // Full context snapshot (copied from pending)
+    L1_modeEnt      := L1_pendMode
+    L1_modeScoreEnt := L1_pendModeScore
+    L1_adxEnt       := L1_pendAdx
+    L1_adxRisingEnt := L1_pendAdxRising
+    L1_bodyPctEnt   := L1_pendBodyPct
+    L1_closeLocEnt  := L1_pendCloseLoc
+    L1_rngAtrEnt    := L1_pendRngAtr
+    L1_distEFATR    := L1_pendDistEFATR
+    L1_distESATR    := L1_pendDistESATR
+    L1_distBullATR  := L1_pendDistBullATR
+    L1_bsiEnt       := L1_pendBSI
+    L1_bsaEnt       := L1_pendBSA
+    L1_bsrEnt       := L1_pendBSR
+
+    // Trade tracking anchors (optional but consistent)
+    L1_entryTime := time
+    L1_entryBar  := bar_index
+
+    // ---- BEAR diagnostics snapshot (only meaningful for SHORT entries) ----
+    if (L1_pendDir == "SHORT") and (L1_pendReg == "BEAR")
+        L1_bearPendingEnt      := pendingBear ? 1 : 0
+        L1_bearActiveEnt       := bearActive ? 1 : 0
+        L1_bearBreakLvlEnt     := bearBreakLvl
+        L1_bearReclLvlEnt      := bearReclLvl
+        L1_bearReclaimCntEnt   := bearReclaimCloseCnt
+        L1_bearPBSeenEnt       := bearPBSeen ? 1 : 0
+        L1_bearPBBarEnt        := bearPBBar
+        L1_lastBearExitBarEnt  := lastBearShortExitBar
+        L1_bearShortADXOkEnt   := bearShortADXOk ? 1 : 0
+        L1_bearCloseNearLowEnt := bearCloseNearLowOk ? 1 : 0
+        L1_bearAdxSlopeEnt     := adxSlopeNow
+        L1_bearHtfOnEnt        := htfOnNow ? 1 : 0
+        L1_bearHtfFlipEnt      := htfFlipEventNow
+        L1_bearAllowMaskEnt    := bearAllowMaskNow
+        L1_bearVetoMaskEnt     := bearVetoMaskNow
+    else
+        // Keep non-BEAR trades clean (na) so parsing is trivial
+        L1_bearPendingEnt      := na
+        L1_bearActiveEnt       := na
+        L1_bearBreakLvlEnt     := na
+        L1_bearReclLvlEnt      := na
+        L1_bearReclaimCntEnt   := na
+        L1_bearPBSeenEnt       := na
+        L1_bearPBBarEnt        := na
+        L1_lastBearExitBarEnt  := na
+        L1_bearShortADXOkEnt   := na
+        L1_bearCloseNearLowEnt := na
+        L1_bearAdxSlopeEnt     := na
+        L1_bearHtfOnEnt        := na
+        L1_bearHtfFlipEnt      := ""
+        L1_bearAllowMaskEnt    := na
+        L1_bearVetoMaskEnt     := na
+
 
 // L1-only: defer PB snapshot reset until AFTER L1 closedtrades rows are emitted on the flat bar
 if posClosed
@@ -1091,7 +1215,22 @@ if exportToLogs and barstate.isconfirmed
                  str.tostring(L1_pbDepthAtrEnt) + "," + 
                  str.tostring(L1_pbExpAgeBarsEnt) + "," + 
                  str.tostring(L1_pbTouchOkEnt) + "," + 
-                 str.tostring(L1_pbHHProofOkEnt)
+                 str.tostring(L1_pbHHProofOkEnt) + "," + 
+                 str.tostring(L1_bearPendingEnt) + "," + 
+                 str.tostring(L1_bearActiveEnt) + "," + 
+                 str.tostring(L1_bearBreakLvlEnt) + "," + 
+                 str.tostring(L1_bearReclLvlEnt) + "," + 
+                 str.tostring(L1_bearReclaimCntEnt) + "," + 
+                 str.tostring(L1_bearPBSeenEnt) + "," + 
+                 str.tostring(L1_bearPBBarEnt) + "," + 
+                 str.tostring(L1_lastBearExitBarEnt) + "," + 
+                 str.tostring(L1_bearShortADXOkEnt) + "," + 
+                 str.tostring(L1_bearCloseNearLowEnt) + "," + 
+                 str.tostring(L1_bearAdxSlopeEnt) + "," + 
+                 str.tostring(L1_bearHtfOnEnt) + "," + 
+                 str.replace_all(L1_bearHtfFlipEnt, ",", ";") + "," + 
+                 str.tostring(L1_bearAllowMaskEnt) + "," + 
+                 str.tostring(L1_bearVetoMaskEnt)
             )
 
         // Advance the emitted pointer
