@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.11 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.12 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -237,6 +237,9 @@ bearShortUseSlope    = input.bool(true, "Bear SHORT: require ADX rising", group=
 bearShortSlopeBars   = input.int(3, "Bear SHORT: ADX rising over N bars", group=grpBear, minval=1)
 bearShortCloseNearLo = input.float(0.35, "Bear SHORT: close must be in bottom X of range", group=grpBear, step=0.05)
 bearAcceptEntryOn = input.bool(true, "Bear: allow entry on acceptance-down (no retest)", group=grpBear)
+bearExitUseReclaim = input.bool(true,  "Bear short: exit on LTF reclaim (pre HTF-BULL-KILL)", group=grpBear)
+bearExitReclaimBars = input.int(2,     "Bear short: reclaim closes needed",                  group=grpBear, minval=1)
+bearExitUseEmaReclaim = input.bool(true, "Bear short: EMAfast reclaim counts as reclaim",    group=grpBear)
 
 bearPB_MaxPop_ATR  = input.float(0.60, "Bear SHORT: retest max pop above bearBreakLvl (ATR*x)", group=grpBear, step=0.05)
 bearLvlHold_ATR    = input.float(0.10, "Bear SHORT: close hold allowance above bearBreakLvl (ATR*x)", group=grpBear, step=0.05)
@@ -559,6 +562,7 @@ var float bearEndY     = na
 var bool  bearPBSeen    = false
 var int   bearPBBar     = na
 var int   lastBearShortExitBar = na   // Change 2: re-entry throttle
+var int bearReclaimCloseCnt = 0
 var int   lastRBShortExitBar = na
 
 // ---- RB SHORT execution latch (Commit S2)
@@ -4206,6 +4210,21 @@ if exitOk and inPos
     if shortHTFKill and ((posTag == "BEAR") or (posTag == "RANGEB"))
         //strategy.close("SHORT", comment="HTF-BULL-KILL")
         //strategy.close("RB_SHORT", comment="HTF-BULL-KILL")
+        // --- Bear: pre-HTF kill exit on LTF reclaim (close-based) ---
+        if barstate.isconfirmed
+            if isShort and (logModeNow() == "BEAR") and bearExitUseReclaim
+                bool reclaimLvlHit = (not na(bearReclLvl)) and (close > bearReclLvl)
+                bool emaReclaimHit = bearExitUseEmaReclaim and (close > emaFast)
+                bool reclaimNow = reclaimLvlHit or emaReclaimHit
+
+                bearReclaimCloseCnt := reclaimNow ? (nz(bearReclaimCloseCnt[1]) + 1) : 0
+
+                if bearReclaimCloseCnt >= bearExitReclaimBars
+                    strategy.close("SHORT", comment="BEAR_RECLAIM_EXIT")
+                    lastBearShortExitBar := bar_index
+            else
+                bearReclaimCloseCnt := 0
+
         closeShortAll("HTF-BULL-KILL")
         // temp tuple unpack
         [tmpExitPending, tmpExitReason, tmpExitOutcome, tmpRegExit] = L1_markExit("HTF-BULL-KILL", 0, logModeNow())
