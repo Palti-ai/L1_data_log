@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.14 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.15 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -250,6 +250,12 @@ bearBreakLookback  = input.int(9, "Bear SHORT: breakdown must break last N-bar l
 bearArmMaxBars     = input.int(14, "Bear SHORT: expire retest in N bars", group=grpBear, minval=3)
 bearTS_Bars        = input.int(24, "Bear SHORT time-stop bars", group=grpBear, minval=5)
 bearTS_MinMFE_ATR  = input.float(0.30, "Bear TS only if MFE < ATR*x", group=grpBear, step=0.05)
+
+// --- Bear SHORT: TP1 + post-TP1 protection (runner-safe) ---
+bearTP1_ATR       = input.float(1.25, "Bear TP1 (ATR*x) — partial", group=grpBear, step=0.25)
+bearTP1_Pct       = input.int(30, "Bear TP1 % to close", group=grpBear, minval=1, maxval=100)
+bearProtBuf_ATR   = input.float(0.10, "Bear post-TP1 protect: stop above entry (ATR*x)", group=grpBear, step=0.05)
+bearProtNeed2Cl   = input.bool(true, "Bear post-TP1 protect: require 2 closes", group=grpBear)
 
 bearInvNeed2Cl     = input.bool(true, "Bear SHORT invalidation: require 2 closes above bearReclLvl", group=grpBear)
 bearAdxMin        = input.float(20, "Bear SHORT: require ADX >=", group=grpBear, step=0.5)
@@ -606,6 +612,7 @@ var int   bullLegNoNewHiStreak = 0
 var int   bullEndBar   = na
 var float bullEndY     = na
 var bool bullTP1Done = false
+var bool bearTP1Done = false
 var int bullNoNewHiStreak = 0
 var int bullLastAddBar = na
 var float bullAddRefHi = na   // last add/entry reference high-water mark
@@ -1690,10 +1697,23 @@ bullPostStructInvalid =
 
 bullCloseInvalid = bullPreInvalid or bullPostTrailInvalid or bullPostStructInvalid
 
-// Bear SHORT invalidation: reclaim above bearReclLvl (close-based, optional 2-close)
-bearShortInvalid =
-     inPos and (posTag == "BEAR") and not na(bearReclLvl) and
+// Bear SHORT invalidation (split: pre-TP1 vs post-TP1 runner protection)
+bearInvPre =
+     inPos and (posTag == "BEAR") and (not bearTP1Done) and not na(bearReclLvl) and
      (close > bearReclLvl) and (not bearInvNeed2Cl or close[1] > bearReclLvl)
+
+// Post-TP1 protection stop: prevent TP1 winners from turning into reclaim/bull-kill losers
+bearProtLevel = (inPos and posTag == "BEAR") ? (strategy.position_avg_price + atr * bearProtBuf_ATR) : na
+bearInvPostProtect =
+     inPos and (posTag == "BEAR") and bearTP1Done and not na(bearProtLevel) and
+     (close > bearProtLevel) and (not bearProtNeed2Cl or close[1] > bearProtLevel)
+
+// Keep your existing reclaim exit logic active after TP1 as well (structure still matters)
+bearInvPostReclaim =
+     inPos and (posTag == "BEAR") and bearTP1Done and not na(bearReclLvl) and
+     (close > bearReclLvl) and (not bearInvNeed2Cl or close[1] > bearReclLvl)
+
+bearShortInvalid = bearInvPre or bearInvPostProtect or bearInvPostReclaim
 
 // RB SHORT invalidation: reclaim above RB value boundary (close-based, optional 2-close)
 rbSInvLvl = (not na(rbSValue) ? (rbSValue + atr * rbS_InvBuf_ATR) : na)
@@ -2756,8 +2776,6 @@ bearShortEnter =
          )
      )
 
-
-
 if bearShortEnter
     strategy.entry("SHORT", strategy.short)
 
@@ -2799,6 +2817,7 @@ if bearShortEnter
 
     entered := true
     entryMode := Mode.Wait  // Bear remains overlay; do not force router mode
+    bearTP1Done := false
 
     // Consume latch
     bearPBSeen := false
@@ -3667,11 +3686,24 @@ bool bullTP1Hit =
      (not na(bullTP1Price)) and
      (close >= bullTP1Price)
 
+float bearTP1Price = (inPos and posTag == "BEAR")
+     ? (strategy.position_avg_price - atr * bearTP1_ATR)
+     : na
+
+bool bearTP1Hit =
+     inPos and
+     (posTag == "BEAR") and
+     (not bearTP1Done) and
+     (not na(bearTP1Price)) and
+     (close <= bearTP1Price)
+
 var int bullTP1Bar = na
 if bullTP1Hit
     bullTP1Bar := bar_index
 if not inPos
     bullTP1Bar := na
+if not inPos
+    bearTP1Done := false
 
 
 //====================================================
@@ -3695,6 +3727,25 @@ if exitOk and bullTP1Hit
         L1_lastPartialBar := bar_index
         L1_lastPartialTime := time
         L1_partialReasons := (L1_partialReasons == "" ? "BULL_TP1" : (L1_partialReasons + "|" + "BULL_TP1"))
+
+if exitOk and bearTP1Hit
+    // partial close ONLY the base short id
+    strategy.close("SHORT", qty_percent=bearTP1_Pct, comment="BEAR_TP1")
+    bearTP1Done := true
+    if exportToLogs
+        L1_tp1Hit := true
+    c_tp1Hits += 1
+
+    // ---- L1 partial aggregates (for the full trade) ----
+    if exportToLogs
+        L1_nPartials += 1
+        L1_partialPctSum += bearTP1_Pct
+        if na(L1_firstPartialBar)
+            L1_firstPartialBar := bar_index
+            L1_firstPartialTime := time
+        L1_lastPartialBar := bar_index
+        L1_lastPartialTime := time
+        L1_partialReasons := (L1_partialReasons == "" ? "BEAR_TP1" : (L1_partialReasons + "|" + "BEAR_TP1"))
 
 // RA TP / success
 raTPLevel = not na(raTPMid) ? raTPMid : rollMid
