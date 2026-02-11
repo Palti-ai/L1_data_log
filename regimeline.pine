@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.17 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.18 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -69,7 +69,9 @@ bullTS_MinMFE_ATR = input.float(0.30, "Time-stop only if MFE < ATR*x", group=grp
 bullInvNeed2Cl   = input.bool(true,  "Bull invalidation: require 2 closes below bullLevel", group=grpBull)
 bullInvBuf_ATR   = input.float(0.10, "Bull invalidation buffer under bullLevel (ATR*x)",   group=grpBull, step=0.05)
 bullTP1_ATR      = input.float(1.97, "Bull TP1 (ATR*x) — partial", group=grpBull, step=0.25)
-bullTP1_Pct      = input.int(99, "Bull TP1 % to close", group=grpBull, minval=1, maxval=100)
+bullTP1_Pct      = input.int(100, "Bull TP1 % to close", group=grpBull, minval=1, maxval=100)
+bullTP0_ATR      = input.float(0.70, "Bull TP0 (ATR*x) — early partial", group=grpBull, step=0.05)
+bullTP0_Pct      = input.int(60,  "Bull TP0 % to close", group=grpBull, minval=1, maxval=100)
 bullUseDMI = input.bool(false, "Bull entry: require +DI > -DI", group=grpBull)
 bullAcceptNeed2Cl      = input.bool(true,  "Bull accept-up requires 2 closes", group=grpBull)
 bullPBRequireFromAbove = input.bool(true,  "Bull PB: require pullback from above zone", group=grpBull)
@@ -616,6 +618,7 @@ var int   bullLegNoNewHiStreak = 0
 var int   bullEndBar   = na
 var float bullEndY     = na
 var bool bullTP1Done = false
+var bool bullTP0Done = false
 var bool bearTP1Done = false
 var bool bearTP0Done = false
 var int bullNoNewHiStreak = 0
@@ -3240,6 +3243,7 @@ if bullPBEnterExec
 
     entered := true
     bullTP1Done := false
+    bullTP0Done := false
     entryMode := Mode.Bull
     // Freeze bullLevel already set; consume bull setup
     bullArmed := false
@@ -3294,6 +3298,7 @@ else if bullCompEnter
 
     entered := true
     bullTP1Done := false
+    bullTP0Done := false
     entryMode := Mode.Bull
 
     // Consume setup (COMP consumes the armed state)
@@ -3349,6 +3354,7 @@ else if bullImpulseEnter
 
     entered := true
     bullTP1Done := false
+    bullTP0Done := false
     entryMode := Mode.Bull
 
     // Consume setup
@@ -3685,6 +3691,16 @@ closeShortAll(_comment) =>
 
 
 // Targets
+float bullTP0Price = (inPos and posTag == "BULL")
+     ? (strategy.position_avg_price + atr * bullTP0_ATR)
+     : na
+
+bool bullTP0Hit =
+     inPos and
+     (posTag == "BULL") and
+     (not bullTP0Done) and
+     (not na(bullTP0Price)) and
+     (close >= bullTP0Price)
 
 float bullTP1Price = (inPos and posTag == "BULL")
      ? (strategy.position_avg_price + atr * bullTP1_ATR)
@@ -3727,6 +3743,28 @@ if not inPos
     bearTP1Done := false
 if not inPos
     bearTP0Done := false
+if not inPos
+    bullTP0Done := false
+
+//====================================================
+// Bull TP0 partial (early de-risk; mirrors BEAR_TP0)
+//====================================================
+if exitOk and bullTP0Hit
+    strategy.close("LONG", qty_percent=bullTP0_Pct, comment="BULL_TP0")
+    bullTP0Done := true
+    if exportToLogs
+        L1_tp1Hit := true
+    c_tp1Hits += 1
+
+    if exportToLogs
+        L1_nPartials += 1
+        L1_partialPctSum += bullTP0_Pct
+        if na(L1_firstPartialBar)
+            L1_firstPartialBar := bar_index
+            L1_firstPartialTime := time
+        L1_lastPartialBar := bar_index
+        L1_lastPartialTime := time
+        L1_partialReasons := (L1_partialReasons == "" ? "BULL_TP0" : (L1_partialReasons + "|" + "BULL_TP0"))
 
 //====================================================
 // Bull TP1 partial (kept separate from full exits)
@@ -4014,6 +4052,7 @@ if pendingReset and (not inPos)
     raDL_mid    := na
     raDL_bar    := na
     bullTP1Done := false
+    bullTP0Done := false
     bullStructLow := na
     bullLevel     := na
     bullLastAddBar := na
