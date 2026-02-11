@@ -252,10 +252,10 @@ bearTS_Bars        = input.int(24, "Bear SHORT time-stop bars", group=grpBear, m
 bearTS_MinMFE_ATR  = input.float(0.30, "Bear TS only if MFE < ATR*x", group=grpBear, step=0.05)
 
 // --- Bear SHORT: TP1 + post-TP1 protection (runner-safe) ---
-bearTP1_ATR       = input.float(1.25, "Bear TP1 (ATR*x) — partial", group=grpBear, step=0.25)
-bearTP1_Pct       = input.int(30, "Bear TP1 % to close", group=grpBear, minval=1, maxval=100)
-bearTP0_ATR       = input.float(0.60, "Bear TP0 (ATR*x) — early partial", group=grpBear, step=0.05)
-bearTP0_Pct       = input.int(100, "Bear TP0 % to close", group=grpBear, minval=1, maxval=100)
+bearTP1_ATR       = input.float(1.65, "Bear TP1 (ATR*x) — partial", group=grpBear, step=0.25)
+bearTP1_Pct       = input.int(40, "Bear TP1 % to close", group=grpBear, minval=1, maxval=100)
+bearTP0_ATR       = input.float(0.70, "Bear TP0 (ATR*x) — early partial", group=grpBear, step=0.05)
+bearTP0_Pct       = input.int(60, "Bear TP0 % to close", group=grpBear, minval=1, maxval=100)
 bearProt0Buf_ATR  = input.float(0.05, "Bear post-TP0 protect: stop above entry (ATR*x)", group=grpBear, step=0.05)
 bearProt0Need2Cl  = input.bool(false, "Bear post-TP0 protect: require 2 closes", group=grpBear)
 bearProtBuf_ATR   = input.float(0.10, "Bear post-TP1 protect: stop above entry (ATR*x)", group=grpBear, step=0.05)
