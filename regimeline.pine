@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.20 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.21 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -1260,6 +1260,8 @@ var int   c_addSig   = 0     // bullAddEnter was true (signal)
 var int   c_addFill  = 0     // position size increased (actual fill)
 var int   c_tp1Hits  = 0     // TP1 executed
 var float prevPosSize = na
+var int dbg_bullTP0Hits = 0
+var int dbg_raTP0Hits   = 0
 
 // ADD gate diagnostics
 var int c_addPB      = 0
@@ -3770,6 +3772,7 @@ if not inPos
 if exitOk and raTP0Hit
     strategy.close("LONG", qty_percent=raTP0_Pct, comment="RA_TP0")
     raTP0Done := true
+    dbg_raTP0Hits += 1
 
     if exportToLogs
         L1_nPartials += 1
@@ -3787,6 +3790,7 @@ if exitOk and raTP0Hit
 if exitOk and bullTP0Hit
     strategy.close("LONG", qty_percent=bullTP0_Pct, comment="BULL_TP0")
     bullTP0Done := true
+    dbg_bullTP0Hits += 1
     if exportToLogs
         L1_tp1Hit := true
     c_tp1Hits += 1
@@ -4152,8 +4156,6 @@ var int c_raBlock_rr   = 0
 var int c_raBlock_farFromLow = 0
 var int c_raBlock_belowMid = 0
 
-
-
 bullTruthLive_flat = (not inPos) and (pendingBull or bullArmed or bullPBSeen)
 
 // “Would be Bull mode if ADX regime didn’t exist”
@@ -4356,14 +4358,14 @@ logTrade(_mode, _score, _exitReason, _outcome) =>
 //====================================================
 // Diagnostics HUD (bottom-right) — clean, readable numbers
 //====================================================
-var table hud = table.new(position.bottom_right, 2, 24)
+var table hud = table.new(position.bottom_right, 2, 26)
 var int hudLastBar = na
 
 
 doHUD = showDiagHUD and barstate.isconfirmed and (na(hudLastBar) or bar_index != hudLastBar)
 if doHUD
     hudLastBar := bar_index
-    table.clear(hud, 0, 0, 1, 23)
+    table.clear(hud, 0, 0, 1, 25)
 
     // Title
     table.cell(hud, 0, 0, "ADX Split HUD", text_color=color.white, bgcolor=color.new(color.black, 0))
@@ -4432,33 +4434,38 @@ if doHUD
     table.cell(hud, 0, 16, "ADD fills / TP1 hits", text_color=color.black)
     table.cell(hud, 1, 16, str.tostring(c_addFill) + " / " + str.tostring(c_tp1Hits), text_color=color.black)
 
+    table.cell(hud, 0, 17, "Bull TP0 hits", text_color=color.black)
+    table.cell(hud, 1, 17, str.tostring(dbg_bullTP0Hits), text_color=color.black)
+
+    table.cell(hud, 0, 18, "RA TP0 hits", text_color=color.black)
+    table.cell(hud, 1, 18, str.tostring(dbg_raTP0Hits), text_color=color.black)
 
     // --- RANGE-A (conversion bottleneck only) ---
-    table.cell(hud, 0, 17, "RA decision events", text_color=color.black)
-    table.cell(hud, 1, 17, str.tostring(c_raReclaimOk), text_color=color.black)
+    table.cell(hud, 0, 19, "RA decision events", text_color=color.black)
+    table.cell(hud, 1, 19, str.tostring(c_raReclaimOk), text_color=color.black)
 
-    table.cell(hud, 0, 18, "RA entry OK", text_color=color.black)
-    table.cell(hud, 1, 18, str.tostring(c_raEntryOk), text_color=color.black)
+    table.cell(hud, 0, 20, "RA entry OK", text_color=color.black)
+    table.cell(hud, 1, 20, str.tostring(c_raEntryOk), text_color=color.black)
 
-    table.cell(hud, 0, 19, "RA blocks: not reclaim", text_color=color.black)
-    table.cell(hud, 1, 19, str.tostring(c_raBlock_notReclaim), text_color=color.black)
+    table.cell(hud, 0, 21, "RA blocks: not reclaim", text_color=color.black)
+    table.cell(hud, 1, 21, str.tostring(c_raBlock_notReclaim), text_color=color.black)
 
-    table.cell(hud, 0, 20, "RA blocks: HTF/Bear/Lock", text_color=color.black)
-    table.cell(hud, 1, 20,
+    table.cell(hud, 0, 22, "RA blocks: HTF/Bear/Lock", text_color=color.black)
+    table.cell(hud, 1, 22,
         str.tostring(c_raBlock_htfOn) + " / " +
         str.tostring(c_raBlock_bearAcc) + " / " +
         str.tostring(c_raBlock_bearLockout),
         text_color=color.black)
 
     // --- BEAR SHORT (main trade engine now) ---
-    table.cell(hud, 0, 21, "BEAR PB seen", text_color=color.black)
-    table.cell(hud, 1, 21, str.tostring(c_bearPBSeen), text_color=color.black)
+    table.cell(hud, 0, 23, "BEAR PB seen", text_color=color.black)
+    table.cell(hud, 1, 23, str.tostring(c_bearPBSeen), text_color=color.black)
 
-    table.cell(hud, 0, 22, "BEAR breakdown signals", text_color=color.black)
-    table.cell(hud, 1, 22, str.tostring(c_bearBreakSig), text_color=color.black)
+    table.cell(hud, 0, 24, "BEAR breakdown signals", text_color=color.black)
+    table.cell(hud, 1, 24, str.tostring(c_bearBreakSig), text_color=color.black)
 
-    table.cell(hud, 0, 23, "BEAR reentry OK bars", text_color=color.black)
-    table.cell(hud, 1, 23, str.tostring(c_bearReentryOk), text_color=color.black)
+    table.cell(hud, 0, 25, "BEAR reentry OK bars", text_color=color.black)
+    table.cell(hud, 1, 25, str.tostring(c_bearReentryOk), text_color=color.black)
 
 
 //====================================================
