@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.18 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.20 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -187,6 +187,8 @@ raStopNeed2Cl      = input.bool(true, "RA stop requires 2 closes below", group=g
 raExecNeed2Cl = input.bool(false, "RA EXEC: require 2 closes above DL_low (else 1-close reclaim)", group=grpRA)
 raTS_Bars          = input.int(48, "RA time-stop bars", group=grpRA, minval=1)
 raAllowHTFNeutral = input.bool(false, "Range-A allowed on HTF neutral", group=grpRA)
+raTP0_ATR = input.float(0.45, "RA TP0 (ATR*x) — early partial", group=grpRA, step=0.05)
+raTP0_Pct = input.int(60,   "RA TP0 % to close",            group=grpRA, minval=1, maxval=100)
 
 
 grpRAFilters="Range-A vetoes"
@@ -619,6 +621,7 @@ var int   bullEndBar   = na
 var float bullEndY     = na
 var bool bullTP1Done = false
 var bool bullTP0Done = false
+var bool raTP0Done = false
 var bool bearTP1Done = false
 var bool bearTP0Done = false
 var int bullNoNewHiStreak = 0
@@ -2763,7 +2766,6 @@ bool bullPBLateVeto = bullPBCountNext > bullPBMaxPerBull
 if bullPBEnter
     bullPBCount += 1
 
-
 rangeAEnter = barstate.isconfirmed and (not inPos) and (mode == Mode.RangeA) and raEntryOk and scoreGateOk(Mode.RangeA)
 rangeBEnter = false  // Strategy v1.0: Range-B is a NO-TRADE regime manager (value migration). It must resolve (to RA/Bull/Bear) or time-stop -> downgrade+log.
 
@@ -3409,6 +3411,7 @@ if barstate.isconfirmed and bullAddEnter
 if rangeAEnter
     strategy.entry("LONG", strategy.long, comment="RANGE_A")
     posTag := "RANGEA"
+    raTP0Done := false
     entryModeTag := "RANGE-A"
     rbFromPBBlock := false
     L1_pendDir  := "LONG"
@@ -3691,16 +3694,24 @@ closeShortAll(_comment) =>
 
 
 // Targets
-float bullTP0Price = (inPos and posTag == "BULL")
-     ? (strategy.position_avg_price + atr * bullTP0_ATR)
+float raTP0Price =
+     (inPos and posTag == "RANGEA")
+     ? (strategy.position_avg_price + atr * raTP0_ATR)
      : na
+
+bool raTP0Hit =
+     inPos and
+     (posTag == "RANGEA") and
+     (not raTP0Done) and
+     (not na(raTP0Price)) and
+     (high >= raTP0Price)
 
 bool bullTP0Hit =
      inPos and
      (posTag == "BULL") and
      (not bullTP0Done) and
      (not na(bullTP0Price)) and
-     (close >= bullTP0Price)
+     (high >= bullTP0Price)
 
 float bullTP1Price = (inPos and posTag == "BULL")
      ? (strategy.position_avg_price + atr * bullTP1_ATR)
@@ -3711,7 +3722,7 @@ bool bullTP1Hit =
      (posTag == "BULL") and
      (not bullTP1Done) and
      (not na(bullTP1Price)) and
-     (close >= bullTP1Price)
+     (high >= bullTP1Price)
 float bearTP0Price = (inPos and posTag == "BEAR")
      ? (strategy.position_avg_price - atr * bearTP0_ATR)
      : na
@@ -3745,6 +3756,26 @@ if not inPos
     bearTP0Done := false
 if not inPos
     bullTP0Done := false
+if not inPos 
+    raTP0Done := false
+
+//====================================================
+// Range-A TP0 partial (early de-risk; reduces RA_STOP loss)
+//====================================================
+if exitOk and raTP0Hit
+    strategy.close("LONG", qty_percent=raTP0_Pct, comment="RA_TP0")
+    raTP0Done := true
+
+    if exportToLogs
+        L1_nPartials += 1
+        L1_partialPctSum += raTP0_Pct
+        if na(L1_firstPartialBar)
+            L1_firstPartialBar := bar_index
+            L1_firstPartialTime := time
+        L1_lastPartialBar := bar_index
+        L1_lastPartialTime := time
+        L1_partialReasons :=
+        (L1_partialReasons == "" ? "RA_TP0" : (L1_partialReasons + "|" + "RA_TP0"))
 
 //====================================================
 // Bull TP0 partial (early de-risk; mirrors BEAR_TP0)
@@ -3764,7 +3795,7 @@ if exitOk and bullTP0Hit
             L1_firstPartialTime := time
         L1_lastPartialBar := bar_index
         L1_lastPartialTime := time
-        L1_partialReasons := (L1_partialReasons == "" ? "BULL_TP0" : (L1_partialReasons + "|" + "BULL_TP0"))
+        (L1_partialReasons := (L1_partialReasons == "" ? "BULL_TP0" : (L1_partialReasons + "|" + "BULL_TP0"))
 
 //====================================================
 // Bull TP1 partial (kept separate from full exits)
@@ -3826,7 +3857,7 @@ if exitOk and bearTP1Hit
 
 // RA TP / success
 raTPLevel = not na(raTPMid) ? raTPMid : rollMid
-raTPHit = inPos and (posTag == "RANGEA") and (close >= raTPLevel)
+raTPHit = inPos and (posTag == "RANGEA") and (high >= raTPLevel)
 raStopLevel = not na(raStopBase) ? (raStopBase - atr * raStop_ATR) : na
 raStopHit = inPos and (posTag == "RANGEA") and not na(raStopLevel) and (close < raStopLevel) and (not raStopNeed2Cl or close[1] < raStopLevel)
 
