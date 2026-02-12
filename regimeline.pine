@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.20 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.16 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -69,9 +69,7 @@ bullTS_MinMFE_ATR = input.float(0.30, "Time-stop only if MFE < ATR*x", group=grp
 bullInvNeed2Cl   = input.bool(true,  "Bull invalidation: require 2 closes below bullLevel", group=grpBull)
 bullInvBuf_ATR   = input.float(0.10, "Bull invalidation buffer under bullLevel (ATR*x)",   group=grpBull, step=0.05)
 bullTP1_ATR      = input.float(1.97, "Bull TP1 (ATR*x) — partial", group=grpBull, step=0.25)
-bullTP1_Pct      = input.int(100, "Bull TP1 % to close", group=grpBull, minval=1, maxval=100)
-bullTP0_ATR      = input.float(0.70, "Bull TP0 (ATR*x) — early partial", group=grpBull, step=0.05)
-bullTP0_Pct      = input.int(60,  "Bull TP0 % to close", group=grpBull, minval=1, maxval=100)
+bullTP1_Pct      = input.int(99, "Bull TP1 % to close", group=grpBull, minval=1, maxval=100)
 bullUseDMI = input.bool(false, "Bull entry: require +DI > -DI", group=grpBull)
 bullAcceptNeed2Cl      = input.bool(true,  "Bull accept-up requires 2 closes", group=grpBull)
 bullPBRequireFromAbove = input.bool(true,  "Bull PB: require pullback from above zone", group=grpBull)
@@ -101,7 +99,7 @@ bullPBMaxAgeBars = input.int(
     minval = 24,
     maxval = 500
 )
-pbTS_Bars = input.int(4, "Bull PB time-stop bars", group=grpBull, minval=1)
+
 // --- PB stall-cluster scoring + veto (NEW) ---
 bullPB_MinScore = input.int(1, "Bull PB: min score (stall score)", group=grpBull, minval=0, maxval=1)
 
@@ -185,7 +183,7 @@ raMinRR_Hard = input.float(0.20, "RA: min RR HARD floor (execution)", group=grpR
 raUseRRGate = input.bool(true, "RA: enforce RR-to-mid (hard veto)", group=grpRA)
 raStopNeed2Cl      = input.bool(true, "RA stop requires 2 closes below", group=grpRA)
 raExecNeed2Cl = input.bool(false, "RA EXEC: require 2 closes above DL_low (else 1-close reclaim)", group=grpRA)
-raTS_Bars          = input.int(1, "RA time-stop bars", group=grpRA, minval=1)
+raTS_Bars          = input.int(48, "RA time-stop bars", group=grpRA, minval=1)
 raAllowHTFNeutral = input.bool(false, "Range-A allowed on HTF neutral", group=grpRA)
 
 
@@ -254,10 +252,10 @@ bearTS_Bars        = input.int(24, "Bear SHORT time-stop bars", group=grpBear, m
 bearTS_MinMFE_ATR  = input.float(0.30, "Bear TS only if MFE < ATR*x", group=grpBear, step=0.05)
 
 // --- Bear SHORT: TP1 + post-TP1 protection (runner-safe) ---
-bearTP1_ATR       = input.float(1.65, "Bear TP1 (ATR*x) — partial", group=grpBear, step=0.25)
-bearTP1_Pct       = input.int(40, "Bear TP1 % to close", group=grpBear, minval=1, maxval=100)
-bearTP0_ATR       = input.float(0.70, "Bear TP0 (ATR*x) — early partial", group=grpBear, step=0.05)
-bearTP0_Pct       = input.int(60, "Bear TP0 % to close", group=grpBear, minval=1, maxval=100)
+bearTP1_ATR       = input.float(1.25, "Bear TP1 (ATR*x) — partial", group=grpBear, step=0.25)
+bearTP1_Pct       = input.int(30, "Bear TP1 % to close", group=grpBear, minval=1, maxval=100)
+bearTP0_ATR       = input.float(0.60, "Bear TP0 (ATR*x) — early partial", group=grpBear, step=0.05)
+bearTP0_Pct       = input.int(100, "Bear TP0 % to close", group=grpBear, minval=1, maxval=100)
 bearProt0Buf_ATR  = input.float(0.05, "Bear post-TP0 protect: stop above entry (ATR*x)", group=grpBear, step=0.05)
 bearProt0Need2Cl  = input.bool(false, "Bear post-TP0 protect: require 2 closes", group=grpBear)
 bearProtBuf_ATR   = input.float(0.10, "Bear post-TP1 protect: stop above entry (ATR*x)", group=grpBear, step=0.05)
@@ -618,7 +616,6 @@ var int   bullLegNoNewHiStreak = 0
 var int   bullEndBar   = na
 var float bullEndY     = na
 var bool bullTP1Done = false
-var bool bullTP0Done = false
 var bool bearTP1Done = false
 var bool bearTP0Done = false
 var int bullNoNewHiStreak = 0
@@ -3243,7 +3240,6 @@ if bullPBEnterExec
 
     entered := true
     bullTP1Done := false
-    bullTP0Done := false
     entryMode := Mode.Bull
     // Freeze bullLevel already set; consume bull setup
     bullArmed := false
@@ -3298,7 +3294,6 @@ else if bullCompEnter
 
     entered := true
     bullTP1Done := false
-    bullTP0Done := false
     entryMode := Mode.Bull
 
     // Consume setup (COMP consumes the armed state)
@@ -3354,7 +3349,6 @@ else if bullImpulseEnter
 
     entered := true
     bullTP1Done := false
-    bullTP0Done := false
     entryMode := Mode.Bull
 
     // Consume setup
@@ -3691,16 +3685,6 @@ closeShortAll(_comment) =>
 
 
 // Targets
-float bullTP0Price = (inPos and posTag == "BULL")
-     ? (strategy.position_avg_price + atr * bullTP0_ATR)
-     : na
-
-bool bullTP0Hit =
-     inPos and
-     (posTag == "BULL") and
-     (not bullTP0Done) and
-     (not na(bullTP0Price)) and
-     (high >= bullTP0Price)
 
 float bullTP1Price = (inPos and posTag == "BULL")
      ? (strategy.position_avg_price + atr * bullTP1_ATR)
@@ -3711,7 +3695,7 @@ bool bullTP1Hit =
      (posTag == "BULL") and
      (not bullTP1Done) and
      (not na(bullTP1Price)) and
-     (high >= bullTP1Price)
+     (close >= bullTP1Price)
 float bearTP0Price = (inPos and posTag == "BEAR")
      ? (strategy.position_avg_price - atr * bearTP0_ATR)
      : na
@@ -3743,28 +3727,6 @@ if not inPos
     bearTP1Done := false
 if not inPos
     bearTP0Done := false
-if not inPos
-    bullTP0Done := false
-
-//====================================================
-// Bull TP0 partial (early de-risk; mirrors BEAR_TP0)
-//====================================================
-if exitOk and bullTP0Hit
-    strategy.close("LONG", qty_percent=bullTP0_Pct, comment="BULL_TP0")
-    bullTP0Done := true
-    if exportToLogs
-        L1_tp1Hit := true
-    c_tp1Hits += 1
-
-    if exportToLogs
-        L1_nPartials += 1
-        L1_partialPctSum += bullTP0_Pct
-        if na(L1_firstPartialBar)
-            L1_firstPartialBar := bar_index
-            L1_firstPartialTime := time
-        L1_lastPartialBar := bar_index
-        L1_lastPartialTime := time
-        L1_partialReasons := (L1_partialReasons == "" ? "BULL_TP0" : (L1_partialReasons + "|" + "BULL_TP0"))
 
 //====================================================
 // Bull TP1 partial (kept separate from full exits)
@@ -3833,10 +3795,6 @@ raStopHit = inPos and (posTag == "RANGEA") and not na(raStopLevel) and (close < 
 // Time-stops
 bullMFE = (inPos and posTag=="BULL") ? (tradeHi - strategy.position_avg_price) : 0.0
 bullBarsIn = (inPos and posTag=="BULL" and not na(lastEntryBar)) ? (bar_index - lastEntryBar) : 0
-
-// PB time-stop (engine-isolated): applies ONLY if the entryEngine that opened this position was BULL_PB
-pbTimeStop = inPos and posTag=="BULL" and (L1_entryEngine == "BULL_PB") and (bullBarsIn >= pbTS_Bars)
-
 bullTimeStop = inPos and posTag=="BULL" and (bullBarsIn >= bullTS_Bars) and (bullMFE < atr * bullTS_MinMFE_ATR)
 
 //====================================================
@@ -3959,11 +3917,6 @@ if exitOk and inPos
         exitReg := "BEAR"
 
     // 7) Time-stops (must pay quickly)
-    if (not doExit) and pbTimeStop
-        doExit := true
-        exitReason := "BULL_PB_TS"
-        exitReg := "BULL"
-
     if (not doExit) and bullTimeStop
         doExit := true
         exitReason := "BULL_TS"
@@ -4061,7 +4014,6 @@ if pendingReset and (not inPos)
     raDL_mid    := na
     raDL_bar    := na
     bullTP1Done := false
-    bullTP0Done := false
     bullStructLow := na
     bullLevel     := na
     bullLastAddBar := na
@@ -5122,3 +5074,5 @@ if doTableUpdate
             table.cell(t, 1, r+1, "")
             table.cell(t, 2, r+1, "")
             table.cell(t, 3, r+1, "")
+
+// ===== CHUNK 3 END =====
