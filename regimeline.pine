@@ -3706,6 +3706,11 @@ bool raTP0Hit =
      (not na(raTP0Price)) and
      (high >= raTP0Price)
 
+float bullTP0Price =
+     (inPos and posTag == "BULL")
+     ? (strategy.position_avg_price + atr * bullTP0_ATR)
+     : na
+
 bool bullTP0Hit =
      inPos and
      (posTag == "BULL") and
@@ -3774,8 +3779,7 @@ if exitOk and raTP0Hit
             L1_firstPartialTime := time
         L1_lastPartialBar := bar_index
         L1_lastPartialTime := time
-        L1_partialReasons :=
-        (L1_partialReasons == "" ? "RA_TP0" : (L1_partialReasons + "|" + "RA_TP0"))
+        L1_partialReasons := (L1_partialReasons == "" ? "RA_TP0" : (L1_partialReasons + "|" + "RA_TP0"))
 
 //====================================================
 // Bull TP0 partial (early de-risk; mirrors BEAR_TP0)
@@ -3795,7 +3799,7 @@ if exitOk and bullTP0Hit
             L1_firstPartialTime := time
         L1_lastPartialBar := bar_index
         L1_lastPartialTime := time
-        (L1_partialReasons := (L1_partialReasons == "" ? "BULL_TP0" : (L1_partialReasons + "|" + "BULL_TP0"))
+        L1_partialReasons := (L1_partialReasons == "" ? "BULL_TP0" : (L1_partialReasons + "|" + "BULL_TP0"))
 
 //====================================================
 // Bull TP1 partial (kept separate from full exits)
