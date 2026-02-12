@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.19 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.20 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -101,7 +101,7 @@ bullPBMaxAgeBars = input.int(
     minval = 24,
     maxval = 500
 )
-
+pbTS_Bars = input.int(4, "Bull PB time-stop bars", group=grpBull, minval=1)
 // --- PB stall-cluster scoring + veto (NEW) ---
 bullPB_MinScore = input.int(1, "Bull PB: min score (stall score)", group=grpBull, minval=0, maxval=1)
 
@@ -185,7 +185,7 @@ raMinRR_Hard = input.float(0.20, "RA: min RR HARD floor (execution)", group=grpR
 raUseRRGate = input.bool(true, "RA: enforce RR-to-mid (hard veto)", group=grpRA)
 raStopNeed2Cl      = input.bool(true, "RA stop requires 2 closes below", group=grpRA)
 raExecNeed2Cl = input.bool(false, "RA EXEC: require 2 closes above DL_low (else 1-close reclaim)", group=grpRA)
-raTS_Bars          = input.int(48, "RA time-stop bars", group=grpRA, minval=1)
+raTS_Bars          = input.int(1, "RA time-stop bars", group=grpRA, minval=1)
 raAllowHTFNeutral = input.bool(false, "Range-A allowed on HTF neutral", group=grpRA)
 
 
@@ -3833,6 +3833,10 @@ raStopHit = inPos and (posTag == "RANGEA") and not na(raStopLevel) and (close < 
 // Time-stops
 bullMFE = (inPos and posTag=="BULL") ? (tradeHi - strategy.position_avg_price) : 0.0
 bullBarsIn = (inPos and posTag=="BULL" and not na(lastEntryBar)) ? (bar_index - lastEntryBar) : 0
+
+// PB time-stop (engine-isolated): applies ONLY if the entryEngine that opened this position was BULL_PB
+pbTimeStop = inPos and posTag=="BULL" and (L1_entryEngine == "BULL_PB") and (bullBarsIn >= pbTS_Bars)
+
 bullTimeStop = inPos and posTag=="BULL" and (bullBarsIn >= bullTS_Bars) and (bullMFE < atr * bullTS_MinMFE_ATR)
 
 //====================================================
@@ -3955,6 +3959,11 @@ if exitOk and inPos
         exitReg := "BEAR"
 
     // 7) Time-stops (must pay quickly)
+    if (not doExit) and pbTimeStop
+        doExit := true
+        exitReason := "BULL_PB_TS"
+        exitReg := "BULL"
+
     if (not doExit) and bullTimeStop
         doExit := true
         exitReason := "BULL_TS"
