@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.24 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.25 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -1135,6 +1135,10 @@ if exportToLogs and barstate.isconfirmed
             // closedtrades are 0..N-1, so +1 gives a clean 1-based sequence.
             int tradeSeq = k + 1
 
+            // Per-row monetization flags (1:1 with TradingView closedtrades records)
+            bool tp1HitRow    = (tvExitId == "BULL_TP1") or (tvExitId == "BEAR_TP1")
+            bool trailEverRow = str.contains(tvExitId, "TRAIL")
+
             log.info(
                  L1_runId + "," + L1_tf + "," + L1_scriptVer + "," + str.tostring(tradeSeq) + "," +
                  str.tostring(tradeSeq) + "," +
@@ -1203,8 +1207,8 @@ if exportToLogs and barstate.isconfirmed
                  str.tostring(L1_bsrEnt) + "," +
 
                  // Monetization/management flags (still meaningful)
-                 str.tostring(L1_tp1Hit) + "," + 
-                 str.tostring(L1_trailEver) + "," + 
+                 str.tostring(tp1HitRow) + "," + 
+                 str.tostring(trailEverRow) + "," + 
                  str.tostring(L1_addCount) + "," +
                  str.tostring(L1_pbVetoMaskEnt) + "," +
                  str.tostring(L1_pbMajorImpulseEnt) + "," +
