@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.23 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.24 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -1727,12 +1727,13 @@ bearInvPostProtect =
      (close > bearProtLevel) and (not bearProtNeed2Cl or close[1] > bearProtLevel)
 
 // Post-TP1 trail: EMAfast + buffer (runner-style). After TP1 we stop using reclaim invalidation; BE+trail manage the runner.
-bearTrailEMA   = emaFast
+bearTrailEMA = emaFast
 bearTrailLevel = (inPos and posTag == "BEAR") ? (bearTrailEMA + atr * bearTrailBuf_ATR) : na
+bearInvPostTrail = inPos and (posTag == "BEAR") and bearTP1Done and bearTrailOn and not na(bearTrailLevel) and (close > bearTrailLevel) and (not bearProtNeed2Cl or close[1] > bearTrailLevel)
 
-bearInvPostTrail =
-     inPos and (posTag == "BEAR") and bearTP1Done and bearTrailOn and not na(bearTrailLevel) and
-     (close > bearTrailLevel) and (not bearProtNeed2Cl or close[1] > bearTrailLevel)
+// L1: BEAR trail armed/fired latch (auditable per full trade)
+if exportToLogs and inPos and (posTag == "BEAR") and bearTP1Done and bearTrailOn and not na(bearTrailLevel)
+    L1_trailEver := true
 
 bearShortInvalid = bearInvPre or bearInvPostTP0Protect or bearInvPostProtect or bearInvPostTrail
 
@@ -3767,9 +3768,8 @@ if not inPos
 if exitOk and bullTP0Hit
     strategy.close("LONG", qty_percent=bullTP0_Pct, comment="BULL_TP0")
     bullTP0Done := true
-    if exportToLogs
-        L1_tp1Hit := true
-    c_tp1Hits += 1
+
+    // NOTE: TP0 is a partial, but not TP1 -> do NOT touch L1_tp1Hit or c_tp1Hits here.
 
     if exportToLogs
         L1_nPartials += 1
@@ -3806,9 +3806,8 @@ if exitOk and bullTP1Hit
 if exitOk and bearTP0Hit
     strategy.close("SHORT", qty_percent=bearTP0_Pct, comment="BEAR_TP0")
     bearTP0Done := true
-    if exportToLogs
-        L1_tp1Hit := true
-    c_tp1Hits += 1
+
+    // NOTE: TP0 is a partial, but not TP1 -> do NOT touch L1_tp1Hit or c_tp1Hits here.
 
     if exportToLogs
         L1_nPartials += 1
@@ -3945,6 +3944,13 @@ if exitOk and inPos
         exitReg := "BULL"
 
     // 3) Short invalidations
+    // 3a) BEAR trail exit (post-TP1 trail reclaim)
+    if (not doExit) and bearInvPostTrail
+        doExit := true
+        exitReason := "BEAR_TRAIL"
+        exitReg := "BEAR"
+
+    // 3b) Other BEAR invalidations
     if (not doExit) and bearShortInvalid
         doExit := true
         exitReason := "BEAR_INV"
@@ -4090,7 +4096,9 @@ if pendingReset and (not inPos)
     rbSPBSeen := false
     rbSPBBar  := na
     rbSValue  := na
-
+    // L1 monetization flags reset per full trade
+    L1_tp1Hit := false
+    L1_trailEver := false
 
 //====================================================
 // ADX split verification — event counters (NO candle spam)
