@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.21 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.22 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -1120,11 +1120,13 @@ if exportToLogs and barstate.isconfirmed
             // Bars in trade for THIS closed record
             int barsInTrade = (not na(eBar) and not na(xBar)) ? (xBar - eBar) : na
 
-            // MFE/MAE: for strict 1:1 Trade List parity, these can’t be reconstructed perfectly per partial
-            // unless you store per-trade excursion history by entry_bar_index.
-            // We keep your existing fields but output na here to avoid false data.
-            float mfePct = na
-            float maePct = na
+            // MFE/MAE (percent): use TradingView closedtrades excursion stats (works per closed record, including partials).
+            float ruUsd = strategy.closedtrades.max_runup(k)      // max favorable excursion in account currency for this closed record
+            float ddUsd = strategy.closedtrades.max_drawdown(k)   // max adverse excursion in account currency for this closed record (typically negative)
+            float notional = math.abs(ePx * sz)                   // approximate notional used to express excursion as percent
+
+            float mfePct = notional > 0 ? (ruUsd / notional) * 100.0 : na
+            float maePct = notional > 0 ? (-math.abs(ddUsd) / notional) * 100.0 : na
 
             // Trade Seq MUST match TradingView’s Trade List row ordering:
             // closedtrades are 0..N-1, so +1 gives a clean 1-based sequence.
