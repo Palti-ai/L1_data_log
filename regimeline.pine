@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.22 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.23 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -255,13 +255,16 @@ bearTS_MinMFE_ATR  = input.float(0.30, "Bear TS only if MFE < ATR*x", group=grpB
 
 // --- Bear SHORT: TP1 + post-TP1 protection (runner-safe) ---
 bearTP1_ATR       = input.float(1.65, "Bear TP1 (ATR*x) — partial", group=grpBear, step=0.25)
-bearTP1_Pct       = input.int(40, "Bear TP1 % to close", group=grpBear, minval=1, maxval=100)
+bearTP1_R         = input.float(0.80, "Bear TP1 (R) — partial (uses stop distance)", group=grpBear, step=0.05, minval=0.10, maxval=5.00)
+bearTP1_Pct       = input.int(33, "Bear TP1 % to close", group=grpBear, minval=1, maxval=100)
 bearTP0_ATR       = input.float(0.70, "Bear TP0 (ATR*x) — early partial", group=grpBear, step=0.05)
 bearTP0_Pct       = input.int(60, "Bear TP0 % to close", group=grpBear, minval=1, maxval=100)
 bearProt0Buf_ATR  = input.float(0.05, "Bear post-TP0 protect: stop above entry (ATR*x)", group=grpBear, step=0.05)
 bearProt0Need2Cl  = input.bool(false, "Bear post-TP0 protect: require 2 closes", group=grpBear)
 bearProtBuf_ATR   = input.float(0.10, "Bear post-TP1 protect: stop above entry (ATR*x)", group=grpBear, step=0.05)
 bearProtNeed2Cl   = input.bool(true, "Bear post-TP1 protect: require 2 closes", group=grpBear)
+bearTrailOn       = input.bool(true,  "Bear post-TP1: enable EMA trail (runner)", group=grpBear)
+bearTrailBuf_ATR  = input.float(0.25, "Bear post-TP1: EMA trail buffer (ATR*x)",  group=grpBear, step=0.05)
 
 bearInvNeed2Cl     = input.bool(true, "Bear SHORT invalidation: require 2 closes above bearReclLvl", group=grpBear)
 bearAdxMin        = input.float(20, "Bear SHORT: require ADX >=", group=grpBear, step=0.5)
@@ -1723,12 +1726,15 @@ bearInvPostProtect =
      inPos and (posTag == "BEAR") and bearTP1Done and not na(bearProtLevel) and
      (close > bearProtLevel) and (not bearProtNeed2Cl or close[1] > bearProtLevel)
 
-// Keep your existing reclaim exit logic active after TP1 as well (structure still matters)
-bearInvPostReclaim =
-     inPos and (posTag == "BEAR") and bearTP1Done and not na(bearReclLvl) and
-     (close > bearReclLvl) and (not bearInvNeed2Cl or close[1] > bearReclLvl)
+// Post-TP1 trail: EMAfast + buffer (runner-style). After TP1 we stop using reclaim invalidation; BE+trail manage the runner.
+bearTrailEMA   = emaFast
+bearTrailLevel = (inPos and posTag == "BEAR") ? (bearTrailEMA + atr * bearTrailBuf_ATR) : na
 
-bearShortInvalid = bearInvPre or bearInvPostTP0Protect or bearInvPostProtect or bearInvPostReclaim
+bearInvPostTrail =
+     inPos and (posTag == "BEAR") and bearTP1Done and bearTrailOn and not na(bearTrailLevel) and
+     (close > bearTrailLevel) and (not bearProtNeed2Cl or close[1] > bearTrailLevel)
+
+bearShortInvalid = bearInvPre or bearInvPostTP0Protect or bearInvPostProtect or bearInvPostTrail
 
 // RB SHORT invalidation: reclaim above RB value boundary (close-based, optional 2-close)
 rbSInvLvl = (not na(rbSValue) ? (rbSValue + atr * rbS_InvBuf_ATR) : na)
@@ -3725,8 +3731,15 @@ bool bearTP0Hit =
      (not na(bearTP0Price)) and
      (close <= bearTP0Price)
 
+// Bear TP1 target: 0.8R based on stop distance (bearReclLvl - entry). Fallback to ATR target if stop distance is unknown.
+float bearRisk = (inPos and posTag == "BEAR" and not na(bearReclLvl)) ? (bearReclLvl - strategy.position_avg_price) : na
+
 float bearTP1Price = (inPos and posTag == "BEAR")
-     ? (strategy.position_avg_price - atr * bearTP1_ATR)
+     ? (
+         (not na(bearRisk) and bearRisk > 0)
+             ? (strategy.position_avg_price - bearRisk * bearTP1_R)
+             : (strategy.position_avg_price - atr * bearTP1_ATR)
+       )
      : na
 
 bool bearTP1Hit =
