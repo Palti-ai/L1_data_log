@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.20 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.21 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -101,7 +101,7 @@ bullPBMaxAgeBars = input.int(
     minval = 24,
     maxval = 500
 )
-pbTS_Bars = input.int(4, "Bull PB time-stop bars", group=grpBull, minval=1)
+pbTS_Bars = input.int(6, "Bull PB time-stop bars", group=grpBull, minval=1)
 // --- PB stall-cluster scoring + veto (NEW) ---
 bullPB_MinScore = input.int(1, "Bull PB: min score (stall score)", group=grpBull, minval=0, maxval=1)
 
