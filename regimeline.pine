@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.27 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.28 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -3869,7 +3869,13 @@ if exitOk and bearTP1Hit
 //====================================================
 // Range-A TP1 partial (mid touch) — mirrors BEAR/BULL TP1
 //====================================================
-bool raTP1Hit = false
+
+// RA TP / success (compute FIRST)
+raTPLevel = not na(raTPMid) ? raTPMid : rollMid
+raTPHit   = inPos and (posTag == "RANGEA") and (close >= raTPLevel)  // legacy name kept for readability
+bool raTP1Hit = raTP1_On and raTPHit and (not raTP1Done)
+
+// TP1 partial (use AFTER compute)
 if exitOk and raTP1Hit
     strategy.close("LONG", qty_percent=raTP1_Pct, comment="RA_TP1")
     raTP1Done := true
@@ -3888,10 +3894,6 @@ if exitOk and raTP1Hit
         L1_lastPartialTime := time
         L1_partialReasons := (L1_partialReasons == "" ? "RA_TP1" : (L1_partialReasons + "|" + "RA_TP1"))
 
-// RA TP / success
-raTPLevel = not na(raTPMid) ? raTPMid : rollMid
-raTPHit  = inPos and (posTag == "RANGEA") and (close >= raTPLevel)  // legacy name kept for readability
-raTP1Hit := raTP1_On and raTPHit and (not raTP1Done)
 raStopLevel = not na(raStopBase) ? (raStopBase - atr * raStop_ATR) : na
 raStopHit = inPos and (posTag == "RANGEA") and not na(raStopLevel) and (close < raStopLevel) and (not raStopNeed2Cl or close[1] < raStopLevel)
 
