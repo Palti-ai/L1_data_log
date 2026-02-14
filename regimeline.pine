@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.26 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.27 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -189,9 +189,9 @@ raTS_Bars          = input.int(1, "RA time-stop bars", group=grpRA, minval=1)
 raAllowHTFNeutral = input.bool(false, "Range-A allowed on HTF neutral", group=grpRA)
 
 //==================== Range-A Monetization (TP1 + Trail) ====================
-raTP1_On        = input.bool(false, "RA TP1 partial ON", group="Range-A Monetization")
+raTP1_On        = input.bool(true, "RA TP1 partial ON", group="Range-A Monetization")
 raTP1_Pct       = input.int(60, "RA TP1 %", group="Range-A Monetization", minval=1, maxval=100)
-raTrail_On      = input.bool(false, "RA Trail ON (runner after TP1)", group="Range-A Monetization")
+raTrail_On      = input.bool(true, "RA Trail ON (runner after TP1)", group="Range-A Monetization")
 raTrailBuf_ATR  = input.float(0.60, "RA Trail buffer (ATR)", group="Range-A Monetization", minval=0.0, step=0.05)
 raTrailNeed2Cl  = input.bool(true, "RA Trail needs 2 closes", group="Range-A Monetization")
 
@@ -3810,7 +3810,7 @@ if exitOk and bullTP0Hit
         L1_partialReasons := (L1_partialReasons == "" ? "BULL_TP0" : (L1_partialReasons + "|" + "BULL_TP0"))
 
 //====================================================
-// Bull TP1 partial (kept separate from full exits)
+// Bull TP1 partial (kept separate from full exits) 
 //====================================================
 if exitOk and bullTP1Hit
     // partial close ONLY the base long id
@@ -3869,6 +3869,7 @@ if exitOk and bearTP1Hit
 //====================================================
 // Range-A TP1 partial (mid touch) — mirrors BEAR/BULL TP1
 //====================================================
+bool raTP1Hit = false
 if exitOk and raTP1Hit
     strategy.close("LONG", qty_percent=raTP1_Pct, comment="RA_TP1")
     raTP1Done := true
@@ -3890,7 +3891,7 @@ if exitOk and raTP1Hit
 // RA TP / success
 raTPLevel = not na(raTPMid) ? raTPMid : rollMid
 raTPHit  = inPos and (posTag == "RANGEA") and (close >= raTPLevel)  // legacy name kept for readability
-raTP1Hit = raTP1_On and raTPHit and (not raTP1Done)
+raTP1Hit := raTP1_On and raTPHit and (not raTP1Done)
 raStopLevel = not na(raStopBase) ? (raStopBase - atr * raStop_ATR) : na
 raStopHit = inPos and (posTag == "RANGEA") and not na(raStopLevel) and (close < raStopLevel) and (not raStopNeed2Cl or close[1] < raStopLevel)
 
