@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.25 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.26 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -188,6 +188,13 @@ raExecNeed2Cl = input.bool(false, "RA EXEC: require 2 closes above DL_low (else 
 raTS_Bars          = input.int(1, "RA time-stop bars", group=grpRA, minval=1)
 raAllowHTFNeutral = input.bool(false, "Range-A allowed on HTF neutral", group=grpRA)
 
+//==================== Range-A Monetization (TP1 + Trail) ====================
+raTP1_On        = input.bool(false, "RA TP1 partial ON", group="Range-A Monetization")
+raTP1_Pct       = input.int(60, "RA TP1 %", group="Range-A Monetization", minval=1, maxval=100)
+raTrail_On      = input.bool(false, "RA Trail ON (runner after TP1)", group="Range-A Monetization")
+raTrailBuf_ATR  = input.float(0.60, "RA Trail buffer (ATR)", group="Range-A Monetization", minval=0.0, step=0.05)
+raTrailNeed2Cl  = input.bool(true, "RA Trail needs 2 closes", group="Range-A Monetization")
+
 
 grpRAFilters="Range-A vetoes"
 raUseRSI    = input.bool(true, "RSI veto ON", group=grpRAFilters)
@@ -255,7 +262,7 @@ bearTS_MinMFE_ATR  = input.float(0.30, "Bear TS only if MFE < ATR*x", group=grpB
 
 // --- Bear SHORT: TP1 + post-TP1 protection (runner-safe) ---
 bearTP1_ATR       = input.float(1.65, "Bear TP1 (ATR*x) — partial", group=grpBear, step=0.25)
-bearTP1_R         = input.float(0.80, "Bear TP1 (R) — partial (uses stop distance)", group=grpBear, step=0.05, minval=0.10, maxval=5.00)
+bearTP1_R         = input.float(0.8, "Bear TP1 (R) — partial (uses stop distance)", group=grpBear, step=0.05, minval=0.10, maxval=5.00)
 bearTP1_Pct       = input.int(33, "Bear TP1 % to close", group=grpBear, minval=1, maxval=100)
 bearTP0_ATR       = input.float(0.70, "Bear TP0 (ATR*x) — early partial", group=grpBear, step=0.05)
 bearTP0_Pct       = input.int(60, "Bear TP0 % to close", group=grpBear, minval=1, maxval=100)
@@ -624,6 +631,7 @@ var bool bullTP1Done = false
 var bool bullTP0Done = false
 var bool bearTP1Done = false
 var bool bearTP0Done = false
+var bool raTP1Done = false
 var int bullNoNewHiStreak = 0
 var int bullLastAddBar = na
 var float bullAddRefHi = na   // last add/entry reference high-water mark
@@ -1740,6 +1748,19 @@ if exportToLogs and inPos and (posTag == "BEAR") and bearTP1Done and bearTrailOn
     L1_trailEver := true
 
 bearShortInvalid = bearInvPre or bearInvPostTP0Protect or bearInvPostProtect or bearInvPostTrail
+
+// ---- RA runner trail (post-TP1) — mirror BEAR/BULL style ----
+raTrailEMA   = emaFast
+raTrailLevel = (inPos and (posTag == "RANGEA")) ? (raTrailEMA - atr * raTrailBuf_ATR) : na
+
+raInvPostTrail =
+     inPos and (posTag == "RANGEA") and raTP1Done and raTrail_On and not na(raTrailLevel) and
+     (raTrailNeed2Cl ? (close < raTrailLevel and close[1] < raTrailLevel) : (close < raTrailLevel))
+
+// L1: RA trail armed/fired latch (auditable per full trade)
+if exportToLogs and inPos and (posTag == "RANGEA") and raTP1Done and raTrail_On and not na(raTrailLevel)
+    L1_trailEver := true
+
 
 // RB SHORT invalidation: reclaim above RB value boundary (close-based, optional 2-close)
 rbSInvLvl = (not na(rbSValue) ? (rbSValue + atr * rbS_InvBuf_ATR) : na)
@@ -3765,6 +3786,9 @@ if not inPos
     bearTP0Done := false
 if not inPos
     bullTP0Done := false
+if not inPos 
+    raTP1Done := false
+
 
 //====================================================
 // Bull TP0 partial (early de-risk; mirrors BEAR_TP0)
@@ -3842,9 +3866,31 @@ if exitOk and bearTP1Hit
         L1_lastPartialTime := time
         L1_partialReasons := (L1_partialReasons == "" ? "BEAR_TP1" : (L1_partialReasons + "|" + "BEAR_TP1"))
 
+//====================================================
+// Range-A TP1 partial (mid touch) — mirrors BEAR/BULL TP1
+//====================================================
+if exitOk and raTP1Hit
+    strategy.close("LONG", qty_percent=raTP1_Pct, comment="RA_TP1")
+    raTP1Done := true
+
+    if exportToLogs
+        L1_tp1Hit := true
+        c_tp1Hits += 1
+
+        // ---- L1 partial aggregates (for the full trade) ----
+        L1_nPartials += 1
+        L1_partialPctSum += raTP1_Pct
+        if na(L1_firstPartialBar)
+            L1_firstPartialBar := bar_index
+            L1_firstPartialTime := time
+        L1_lastPartialBar := bar_index
+        L1_lastPartialTime := time
+        L1_partialReasons := (L1_partialReasons == "" ? "RA_TP1" : (L1_partialReasons + "|" + "RA_TP1"))
+
 // RA TP / success
 raTPLevel = not na(raTPMid) ? raTPMid : rollMid
-raTPHit = inPos and (posTag == "RANGEA") and (close >= raTPLevel)
+raTPHit  = inPos and (posTag == "RANGEA") and (close >= raTPLevel)  // legacy name kept for readability
+raTP1Hit = raTP1_On and raTPHit and (not raTP1Done)
 raStopLevel = not na(raStopBase) ? (raStopBase - atr * raStop_ATR) : na
 raStopHit = inPos and (posTag == "RANGEA") and not na(raStopLevel) and (close < raStopLevel) and (not raStopNeed2Cl or close[1] < raStopLevel)
 
@@ -3971,10 +4017,10 @@ if exitOk and inPos
         exitReason := "RA_STOP"
         exitReg := "RANGE-A"
 
-    // 5) RA TP
-    if (not doExit) and raTPHit
+    // 5) RA runner trail exit (post-TP1)
+    if (not doExit) and raInvPostTrail
         doExit := true
-        exitReason := "RA_TP"
+        exitReason := "RA_TRAIL"
         exitReg := "RANGE-A"
 
     // 6) Bear force close on expiry (your deferred flag)
