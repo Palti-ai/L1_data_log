@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.26 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.28 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -187,7 +187,9 @@ raStopNeed2Cl      = input.bool(true, "RA stop requires 2 closes below", group=g
 raExecNeed2Cl = input.bool(false, "RA EXEC: require 2 closes above DL_low (else 1-close reclaim)", group=grpRA)
 raTS_Bars          = input.int(1, "RA time-stop bars", group=grpRA, minval=1)
 raAllowHTFNeutral = input.bool(false, "Range-A allowed on HTF neutral", group=grpRA)
-
+raUseRetestEntry   = input.bool(true,  "RA Entry: require retest-hold")
+raRetestBuf_ATR    = input.float(0.10, "RA Retest touch buffer (ATR)", step=0.05)
+raRetestNeedGreen  = input.bool(true,  "RA Retest bar must be green")
 
 grpRAFilters="Range-A vetoes"
 raUseRSI    = input.bool(true, "RSI veto ON", group=grpRAFilters)
@@ -1799,6 +1801,13 @@ raAccept1Cl = raSnapReady and (close > raDL_low) and (close[1] <= raDL_low)
 // EXEC reclaim: either 2-close accept (strict) or 1-close reclaim (early), controlled by input
 raReclaimExecOk = raWasBelow and (raExecNeed2Cl ? raAccept2Cl : raAccept1Cl)
 
+// --- RA retest-that-holds (prevents “enter then dump” cases) ---
+// Require strict 2-close acceptance, then a pullback that holds above DL_low.
+raAccepted = raWasBelow and raAccept2Cl
+raRetestTouch = raAccepted and (low <= raDL_low + atr * raRetestBuf_ATR)
+raRetestHold  = raAccepted and raRetestTouch and (close > raDL_low) and (not raRetestNeedGreen or close > open)
+raRetestOk    = (not raUseRetestEntry) or raRetestHold
+
 
 // Entry must be near the decision low (avoid chasing; fixes risk-gate starvation)
 // Near-low filter should be independent; risk is handled by raRiskOk/raMaxRisk_ATR gate below.
@@ -1821,15 +1830,7 @@ raRsiOk =
 
 
 // Final RA entry gate (HTF OFF, not bear-active, in balance, discount recent, reclaim accepted, vetoes ok)
-raEntryOkRaw = (
-    (not inPos) and htfOffForRA and bearLockoutOk and (not bearActive) and
-    (raInBalance or raBalSnapOk) and raDiscRecent and raReclaimExecOk and
-    (not raUseNearLow or raNearLowOk) and
-    (not raRequireBelowMid or raBelowMidOk) and
-    raRsiOk and raStructSnapOk and
-    adxRAOk
-)
-
+raEntryOkRaw = ( (not inPos) and htfOffForRA and bearLockoutOk and (not bearActive) and (raInBalance or raBalSnapOk) and raDiscRecent and raReclaimExecOk and raRetestOk and (not raUseNearLow or raNearLowOk) and (not raRequireBelowMid or raBelowMidOk) and raRsiOk and raStructSnapOk and adxRAOk )
 
 // --- RA expectancy gates (mechanical, v1.0-aligned) ---
 // Risk gate uses StructLow stopbase, but can fall back to DL_low if StructLow makes risk too large.
