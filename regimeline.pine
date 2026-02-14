@@ -2,18 +2,18 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.28 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.29 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
-     pyramiding=2,
+     pyramiding=1,
      initial_capital=10000,
      default_qty_type=strategy.percent_of_equity,
      default_qty_value=4,
      commission_type=strategy.commission.percent,
-     commission_value=0.04,
-     slippage=1,
-     calc_on_every_tick = false,
+     commission_value=0.1,
+     slippage=2,
+     calc_on_every_tick = true,
      process_orders_on_close = true,
      max_labels_count=500)
 
@@ -226,6 +226,9 @@ rbS_InvBuf_ATR     = input.float(0.10, "RB SHORT invalidation buffer (ATR*x)", g
 grpBear="Bear (Acceptance-down v1.3)"
 bearBuf_ATR      = input.float(0.45, "Break/accept buffer (ATR*x)", group=grpBear, step=0.05)
 bearNeed2Cl      = input.bool(true, "Accept-down requires 2 closes", group=grpBear)
+bearEarly_On     = input.bool(true,  "Early entry on 1st close below break (pre-accept)", group=grpBear)
+bearEarly_QtyPct = input.int(100, "Early entry qty % (if pyramiding=0 keep 100)", minval=1, maxval=100, group=grpBear)
+
 bearLockoutBars  = input.int(6, "Bear lockout bars after accept (flat)", group=grpBear, minval=0)
 bearKillUseHTFveto = input.bool(true, "Bear kill-switch requires HTF OFF (v2.7 default)", group=grpBear)
 bearMaxBars      = input.int(480, "Bear expires if not renewed within N bars", group=grpBear, minval=0)
@@ -1316,6 +1319,9 @@ bearHTFOk = (not htfTrendOk) and (not htfNeutral)
 
 bearBreakNow = bearHTFOk and close < (decLow - atr * bearBuf_ATR)
 
+// Early BEAR entry: first breakdown close (only meaningful when bearNeed2Cl=true)
+bearEarlyEnter = bearEarly_On and bearNeed2Cl and (not inPos) and bearBreakNow and (not bearActive)
+
 if (not bearActive) and (not pendingBear) and bearBreakNow
     pendingBear  := true
     bearBreakLvl := (decLow - atr * bearBuf_ATR)
@@ -1362,6 +1368,14 @@ if bearAcceptOk
 bearAcceptVetoLowAdx = (adx < 20)
 bearAcceptVetoWeakWickPrev = (not na(adx[1])) and (not na(bodyPct[1])) and (adx[1] < 20) and (bodyPct[1] < 0.12)
 bearAcceptImpulseEnter = barstate.isconfirmed and (not inPos) and bearShortOn and bearAcceptEntryOn and (bearActive and not na(bearAcceptedBar) and (bar_index == bearAcceptedBar)) and shortCooldownOk and bearShortADXOk and (adx >= bearShortADXMin) and (close < bearBreakLvl) and (close < open) and (bodyPct >= bearMinBodyPct) and bearCloseNearLowOk and (not bearAcceptVetoLowAdx)
+
+// EARLY (pre-accept) entry: first breakdown close (only when bearNeed2Cl=true)
+bearEarlyImpulseEnter =
+     barstate.isconfirmed and (not inPos) and bearShortOn and bearEarlyEnterOn and bearNeed2Cl and
+     (not bearActive) and (not pendingBear) and bearBreakNow and
+     shortCooldownOk and bearShortADXOk and (adx >= bearShortADXMin) and
+     (close < open) and (bodyPct >= bearMinBodyPct) and bearCloseNearLowOk and
+     (not bearAcceptVetoLowAdx)
 
 // Cancel pendingBear if price reclaims above the reclaim level (close-based truth)
 bearPendingCancel = pendingBear and not na(bearReclLvl) and (close > bearReclLvl) and (not bearNeed2Cl or close[1] > bearReclLvl)
@@ -2793,25 +2807,19 @@ if barstate.isconfirmed and bearReentryOk
 
 bearShortEnter =
      (bearAcceptImpulseEnter) or
-     (
-         barstate.isconfirmed and (not inPos) and bearShortBreakdownNow and
-         bearLocalDowntrendOk and (close < emaFast) and
-         bearLockoutOk and bearReentryOk and shortCooldownOk and
-         (
-             bearAllowContinuation or
-             (not bearKillUseHTFveto or htfOffForRA)
-         )
-     )
+     (bearEarlyImpulseEnter) or
+     ( barstate.isconfirmed and (not inPos) and bearShortBreakdownNow and bearLocalDowntrendOk and (close < emaFast) and bearLockoutOk and bearReentryOk and shortCooldownOk and ( bearAllowContinuation or (not bearKillUseHTFveto or htfOffForRA) ) )
+
 
 if bearShortEnter
-    strategy.entry("SHORT", strategy.short)
+    strategy.entry("SHORT", strategy.short, comment = (not bearEarlyTagOn) ? "" : (bearAcceptImpulseEnter ? "BEAR_S_ACCEPT" : bearEarlyImpulseEnter  ? "BEAR_S_BREAK1" : "BEAR_S_BREAKDOWN"))
 
     posTag := "BEAR"
     entryModeTag := "BEAR"
     // L1 pending entry (committed on actual fill)
     L1_pendDir  := "SHORT"
     L1_pendReg  := "BEAR"
-    L1_pendArch := bearAcceptImpulseEnter ? "BEAR_S_ACCEPT" : "BEAR_S_BREAKDOWN"
+    L1_pendArch := bearAcceptImpulseEnter ? "BEAR_S_ACCEPT" : bearEarlyImpulseEnter  ? "BEAR_S_BREAK1" : "BEAR_S_BREAKDOWN"
 
     L1_pendEntryEngine  := "BEAR_ENTRY"
     L1_pendHtfState     := htfOnNow ? "HTF_ON" : "HTF_OFF"
