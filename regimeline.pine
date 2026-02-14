@@ -226,8 +226,8 @@ rbS_InvBuf_ATR     = input.float(0.10, "RB SHORT invalidation buffer (ATR*x)", g
 grpBear="Bear (Acceptance-down v1.3)"
 bearBuf_ATR      = input.float(0.45, "Break/accept buffer (ATR*x)", group=grpBear, step=0.05)
 bearNeed2Cl      = input.bool(true, "Accept-down requires 2 closes", group=grpBear)
-bearEarly_On     = input.bool(true,  "Early entry on 1st close below break (pre-accept)", group=grpBear)
-bearEarly_QtyPct = input.int(100, "Early entry qty % (if pyramiding=0 keep 100)", minval=1, maxval=100, group=grpBear)
+bearEarlyEnterOn = input.bool(true, "Bear: EARLY entry on 1st break close (pre-accept)", group=grpBear)
+bearEarlyTagOn   = input.bool(true, "Bear: tag EARLY entry comment/logs", group=grpBear)
 
 bearLockoutBars  = input.int(6, "Bear lockout bars after accept (flat)", group=grpBear, minval=0)
 bearKillUseHTFveto = input.bool(true, "Bear kill-switch requires HTF OFF (v2.7 default)", group=grpBear)
@@ -1320,7 +1320,7 @@ bearHTFOk = (not htfTrendOk) and (not htfNeutral)
 bearBreakNow = bearHTFOk and close < (decLow - atr * bearBuf_ATR)
 
 // Early BEAR entry: first breakdown close (only meaningful when bearNeed2Cl=true)
-bearEarlyEnter = bearEarly_On and bearNeed2Cl and (not inPos) and bearBreakNow and (not bearActive)
+bearEarlyEnter = bearEarlyEnterOn and bearNeed2Cl and (not inPos) and bearBreakNow and (not bearActive)
 
 if (not bearActive) and (not pendingBear) and bearBreakNow
     pendingBear  := true
