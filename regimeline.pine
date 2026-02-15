@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.35 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.28 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -264,7 +264,6 @@ bearTP1_R         = input.float(0.8, "Bear TP1 (R) — partial (uses stop distan
 bearTP1_Pct       = input.int(33, "Bear TP1 % to close", group=grpBear, minval=1, maxval=100)
 bearTP0_ATR       = input.float(0.70, "Bear TP0 (ATR*x) — early partial", group=grpBear, step=0.05)
 bearTP0_Pct       = input.int(60, "Bear TP0 % to close", group=grpBear, minval=1, maxval=100)
-bearTP0_LateAdd_ATR = input.float(0.25, "Bear TP0 late-add (ATR*x) — added when bearTP0Late=1", group=grpBear, step=0.05, minval=0.0)
 bearProt0Buf_ATR  = input.float(0.05, "Bear post-TP0 protect: stop above entry (ATR*x)", group=grpBear, step=0.05)
 bearProt0Need2Cl  = input.bool(false, "Bear post-TP0 protect: require 2 closes", group=grpBear)
 bearProtBuf_ATR   = input.float(0.10, "Bear post-TP1 protect: stop above entry (ATR*x)", group=grpBear, step=0.05)
@@ -628,10 +627,8 @@ var int   bullEndBar   = na
 var float bullEndY     = na
 var bool bullTP1Done = false
 var bool bullTP0Done = false
-var bool bearTP1Done = false 
-var bool bearTP0Done = false 
-var bool bearTP0Late = false 
-
+var bool bearTP1Done = false
+var bool bearTP0Done = false
 var int bullNoNewHiStreak = 0
 var int bullLastAddBar = na
 var float bullAddRefHi = na   // last add/entry reference high-water mark
@@ -2626,7 +2623,7 @@ if exportL2 and not l2HeaderDone and barstate.isconfirmed
 l2HeaderDone := true
 
 // ---- Emit one row (from buffer index) ----
-l2_emitRow(_idx, _rel, _isEntry, _isExit, _exitReason, _isCand, _blockedMask) =>
+l2_emitRow(_idx, _rel, _isEntry, _isExit, _exitReason, _isCand, _blkMask) =>
 
     // sanitize string fields that may contain commas
     string coin     = l2_sanitize(syminfo.ticker)
@@ -2704,7 +2701,7 @@ l2_emitRow(_idx, _rel, _isEntry, _isExit, _exitReason, _isCand, _blockedMask) =>
       str.tostring(_isExit  ? 1 : 0) + "," +
       exitR + "," +
       str.tostring(_isCand ? 1 : 0) + "," +
-      str.tostring(_blockedMask) + "," +
+      str.tostring(_blkMask) + "," +
       tagS + "," +
       posStS + "," +
       pbAgeS + "," +
@@ -2732,7 +2729,7 @@ if exportL2 and barstate.isconfirmed and L2_active
         if sz2 > 0
             int curIdx2 = sz2 - 1
             int rel = bar_index - L2_evtBar
-            l2_emitRow(curIdx2, rel, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
+            l2_emitRow(curIdx2, rel, false, false, "", false, 0)
         L2_fwdLeft -= 1
         if L2_fwdLeft <= 0
             L2_active := false
@@ -2814,8 +2811,6 @@ if bearShortEnter
 
     posTag := "BEAR"
     entryModeTag := "BEAR"
-    bearTP0Late := (bearShortADXOk and bearCloseNearLowOk and (adxSlopeNow > 0) and (bodyPct >= 0.55) and (closeLoc <= bearShortCloseNearLo))
-
     // L1 pending entry (committed on actual fill)
     L1_pendDir  := "SHORT"
     L1_pendReg  := "BEAR"
@@ -3153,10 +3148,10 @@ if exportL2 and barstate.isconfirmed and bullPBEnter
             for j = 1 to maxBackPB
                 int i = maxBackPB - j + 1
                 int idx = curIdxPB - i
-                l2_emitRow(idx, -i, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, true, pbVetoMask)
+                l2_emitRow(idx, -i, false, false, "", true, pbVetoMask)
 
             // Emit decision bar as rel=0 (this is the PB decision time row)
-            l2_emitRow(curIdxPB, 0, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, true, pbVetoMask)
+            l2_emitRow(curIdxPB, 0, false, false, "", true, pbVetoMask)
 
 // ==============================
 // PBDBG: log PB candidates (EXEC + optional BLOCK) to Pine Logs
@@ -3425,7 +3420,8 @@ if barstate.isconfirmed and bullAddEnter
                 for j = 1 to maxBackA
                     int i = maxBackA - j + 1
                     int idx = curIdxA - i
-                    l2_emitRow(idx, -i, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
+                    l2_emitRow(idx, -i, false, false, "", false, 0)
+
 
 if rangeAEnter
     strategy.entry("LONG", strategy.long, comment="RANGE_A")
@@ -3508,7 +3504,9 @@ if entered and exportL2 and barstate.isconfirmed
             for j = 1 to maxBack
                 int i = maxBack - j + 1
                 int idx = curIdx - i
-                l2_emitRow(idx, -i, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
+                l2_emitRow(idx, -i, false, false, "", false, 0)
+
+
 
     // Initialize ADD reference on fresh Bull entries
     if entryModeTag == "BULL"
@@ -3665,7 +3663,8 @@ if exportL2 and barstate.isconfirmed and (not inPos)
                 for j = 1 to maxBack
                     int i = maxBack - j + 1
                     int idx = curIdx - i
-                    l2_emitRow(idx, -i, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
+                    l2_emitRow(idx, -i, false, false, "", false, 0)
+
 
 //====================================================
 // L1 max-fav/max-adv tracking (bar index + price)
@@ -3730,7 +3729,9 @@ bool bullTP1Hit =
      (not bullTP1Done) and
      (not na(bullTP1Price)) and
      (high >= bullTP1Price)
-float bearTP0Price = (inPos and posTag == "BEAR") ? (strategy.position_avg_price - atr * (bearTP0_ATR + (bearTP0Late ? bearTP0_LateAdd_ATR : 0.0))) : na
+float bearTP0Price = (inPos and posTag == "BEAR")
+     ? (strategy.position_avg_price - atr * bearTP0_ATR)
+     : na
 
 bool bearTP0Hit =
      inPos and
@@ -3768,42 +3769,13 @@ if not inPos
     bearTP0Done := false
 if not inPos
     bullTP0Done := false
-if not inPos
-    bearTP0Late := false
+
 //====================================================
 // Bull TP0 partial (early de-risk; mirrors BEAR_TP0)
 //====================================================
 if exitOk and bullTP0Hit
     strategy.close("LONG", qty_percent=bullTP0_Pct, comment="BULL_TP0")
     bullTP0Done := true
-// ---- L2 PARTIAL exit window log (TP0) ----
-if exportL2 and barstate.isconfirmed and bullTP0Hit
-    string _evtType = "EXIT_BULL"
-    int _mask = 0
-    bool _isEntry = false
-    bool _isExit  = true
-    bool _isCand  = false
-    if L2_active
-        L2_dropCnt += 1
-    else
-        L2_eventId += 1
-        L2_active := true
-        L2_evtBar := bar_index
-        L2_evtType := _evtType
-        L2_exitReason := "BULL_TP0"
-        L2_blockedMask := _mask
-        L2_isEntryEvt := _isEntry
-        L2_isExitEvt := _isExit
-        L2_isCandEvt := _isCand
-        L2_fwdLeft := l2WindowBars
-        int sz = array.size(l2_bi)
-        if sz > 0
-            int curIdx = sz - 1
-            int maxBack = math.min(l2WindowBars, curIdx)
-            for j = 1 to maxBack
-                int i = maxBack - j + 1
-                int idx = curIdx - i
-                l2_emitRow(idx, -i, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
 
     // NOTE: TP0 is a partial, but not TP1 -> do NOT touch L1_tp1Hit or c_tp1Hits here.
 
@@ -3842,38 +3814,6 @@ if exitOk and bullTP1Hit
 if exitOk and bearTP0Hit
     strategy.close("SHORT", qty_percent=bearTP0_Pct, comment="BEAR_TP0")
     bearTP0Done := true
-
-// ---- L2 PARTIAL exit window log (TP0) ----
-if exportL2 and barstate.isconfirmed and bearTP0Hit
-    string _evtType = "EXIT_BEAR"         // keep exit taxonomy consistent
-    int _mask = 0
-    bool _isEntry = false
-    bool _isExit  = true
-    bool _isCand  = false
-    // IMPORTANT: TP0 is partial, but we still log it as an exit event for Layer-2 analytics
-    if L2_active
-        L2_dropCnt += 1
-    else
-        L2_eventId += 1
-        L2_active := true
-        L2_evtBar := bar_index
-        L2_evtType := _evtType
-        L2_exitReason := "BEAR_TP0"
-        L2_blockedMask := _mask
-        L2_isEntryEvt := _isEntry
-        L2_isExitEvt := _isExit
-        L2_isCandEvt := _isCand
-        L2_fwdLeft := l2WindowBars
-        int sz = array.size(l2_bi)
-        if sz > 0
-            int curIdx = sz - 1
-            int maxBack = math.min(l2WindowBars, curIdx)
-            // Backfill: -N..-1
-            for j = 1 to maxBack
-                int i = maxBack - j + 1
-                int idx = curIdx - i
-                l2_emitRow(idx, -i, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
-
 
     // NOTE: TP0 is a partial, but not TP1 -> do NOT touch L1_tp1Hit or c_tp1Hits here.
 
@@ -4125,7 +4065,10 @@ if exportL2 and barstate.isconfirmed and doExit
             for j = 1 to maxBack
                 int i = maxBack - j + 1
                 int idx = curIdx - i
-                l2_emitRow(idx, -i, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
+                l2_emitRow(idx, -i, false, false, "", false, 0)
+
+
+
 
 // Apply deferred resets once we are actually flat
 if pendingReset and (not inPos)
