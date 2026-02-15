@@ -1326,12 +1326,13 @@ if (not bearActive) and (not pendingBear) and bearBreakNow
     bearReclLvl  := (decLow + atr * bearBuf_ATR)
 
 // Adaptive acceptance: when bearNeed2Cl=true, allow accept on 1st close ONLY if the break candle is decisive.
-bearAcceptEarlyOk =
+bearAcceptEarlyOk = (
     bearAccEarlyOn and bearNeed2Cl and pendingBear and not na(bearBreakLvl) and
     bearShortADXOk and (adx >= bearShortADXMin) and (adx >= 20) and
     (close < (bearBreakLvl - atr * bearAccEarlyBuf_ATR)) and
     (close < open) and (bodyPct >= math.max(bearMinBodyPct, bearAccEarlyMinBodyPct)) and
     bearCloseNearLowOk
+)
 
 bearAcceptOk = pendingBear and not na(bearBreakLvl) and (close < bearBreakLvl) and (not bearNeed2Cl or close[1] < bearBreakLvl or bearAcceptEarlyOk)
 if bearAcceptOk
