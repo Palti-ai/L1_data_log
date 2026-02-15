@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.32 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.28 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -236,8 +236,6 @@ bearRenewTighten = input.bool(true, "On renewal, tighten break/reclaim snapshot 
 shortCooldownAfterHTFBullBars = input.int(48, "SHORT cooldown after HTF bull (bars)", group=grpBear, minval=0)
 bearNeedLocalDowntrend = input.bool(true, "Bear SHORT: require local EMA downtrend (fast<slow + falling)", group=grpBear)
 bearEmaSlopeBars       = input.int(3, "Bear SHORT: EMA slope bars", group=grpBear, minval=1)
-bearInvPLockArm_ATR  = input.float(0.35, "BEAR_INV profit-lock arm (ATR)", step=0.05, minval=0.05, group=grpBear)
-bearInvPLockLock_ATR = input.float(0.08, "BEAR_INV profit locked once armed (ATR)", step=0.02, minval=0.0, group=grpBear)
 
 // --- Bear SHORT execution (Commit S1) ---
 bearShortOn        = input.bool(true, "Bear: enable SHORT entries (v1.3 only)", group=grpBear)
@@ -3913,8 +3911,6 @@ raTimeStop = inPos and posTag=="RANGEA" and (raBarsIn >= raTS_Bars)
 bearMFE = (inPos and posTag=="BEAR") ? (strategy.position_avg_price - tradeLo) : 0.0
 bearBarsIn = (inPos and posTag=="BEAR" and not na(lastEntryBar)) ? (bar_index - lastEntryBar) : 0
 bearTimeStop = inPos and posTag=="BEAR" and (bearBarsIn >= bearTS_Bars) and (bearMFE < atr * bearTS_MinMFE_ATR)
-bearInvPLockArmed = inPos and isShort and (posTag=="BEAR") and (bearMFE >= atr * bearInvPLockArm_ATR)
-bearInvPLockStop  = bearInvPLockArmed ? (strategy.position_avg_price - atr * bearInvPLockLock_ATR) : na
 
 // RB SHORT time-stop (must pay quickly)
 rbSMFE = (inPos and posTag=="RANGEB" and isShort) ? (strategy.position_avg_price - tradeLo) : 0.0
@@ -3930,11 +3926,6 @@ rbFlatTimeStop = (not inPos) and (rbAttempt or rbPending or rbActive) and not na
 //====================================================
 // EXIT EXECUTION + L1/L2 latching (NO close_all)
 //====================================================
-
-// Submit BEAR profit-lock stop every bar (intrabar-capable). Only arms after MFE gate.
-if bearInvPLockArmed and not na(bearInvPLockStop)
-    strategy.exit("BEAR_INV", from_entry="SHORT", stop=bearInvPLockStop, comment="BEAR_INV")
-
 
 // --- Build a single "exit event" per bar (priority order) ---
 bool doExit = false
