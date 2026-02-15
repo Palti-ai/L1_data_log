@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.33 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.35 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -627,8 +627,11 @@ var int   bullEndBar   = na
 var float bullEndY     = na
 var bool bullTP1Done = false
 var bool bullTP0Done = false
-var bool bearTP1Done = false
-var bool bearTP0Done = false
+var bool bearTP1Done = false 
+var bool bearTP0Done = false 
+var bool bearTP0Late = false 
+float bearTP0_LateAdd_ATR = 0.25
+
 var int bullNoNewHiStreak = 0
 var int bullLastAddBar = na
 var float bullAddRefHi = na   // last add/entry reference high-water mark
@@ -2811,6 +2814,8 @@ if bearShortEnter
 
     posTag := "BEAR"
     entryModeTag := "BEAR"
+    bearTP0Late := (bearShortADXOk and bearCloseNearLowOk and (adxSlopeNow > 0) and (bodyPct >= 0.55) and (closeLoc <= bearShortCloseNearLo))
+
     // L1 pending entry (committed on actual fill)
     L1_pendDir  := "SHORT"
     L1_pendReg  := "BEAR"
@@ -3725,9 +3730,7 @@ bool bullTP1Hit =
      (not bullTP1Done) and
      (not na(bullTP1Price)) and
      (high >= bullTP1Price)
-float bearTP0Price = (inPos and posTag == "BEAR")
-     ? (strategy.position_avg_price - atr * bearTP0_ATR)
-     : na
+float bearTP0Price = (inPos and posTag == "BEAR") ? (strategy.position_avg_price - atr * (bearTP0_ATR + (bearTP0Late ? bearTP0_LateAdd_ATR : 0.0))) : na
 
 bool bearTP0Hit =
      inPos and
@@ -3765,13 +3768,42 @@ if not inPos
     bearTP0Done := false
 if not inPos
     bullTP0Done := false
-
+if not inPos
+    bearTP0Late := false
 //====================================================
 // Bull TP0 partial (early de-risk; mirrors BEAR_TP0)
 //====================================================
 if exitOk and bullTP0Hit
     strategy.close("LONG", qty_percent=bullTP0_Pct, comment="BULL_TP0")
     bullTP0Done := true
+// ---- L2 PARTIAL exit window log (TP0) ----
+if exportL2 and barstate.isconfirmed and bullTP0Hit
+    string _evtType = "EXIT_BULL"
+    int _mask = 0
+    bool _isEntry = false
+    bool _isExit  = true
+    bool _isCand  = false
+    if L2_active
+        L2_dropCnt += 1
+    else
+        L2_eventId += 1
+        L2_active := true
+        L2_evtBar := bar_index
+        L2_evtType := _evtType
+        L2_exitReason := "BULL_TP0"
+        L2_blockedMask := _mask
+        L2_isEntryEvt := _isEntry
+        L2_isExitEvt := _isExit
+        L2_isCandEvt := _isCand
+        L2_fwdLeft := l2WindowBars
+        int sz = array.size(l2_bi)
+        if sz > 0
+            int curIdx = sz - 1
+            int maxBack = math.min(l2WindowBars, curIdx)
+            for j = 1 to maxBack
+                int i = maxBack - j + 1
+                int idx = curIdx - i
+                l2_emitRow(idx, -i, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
 
     // NOTE: TP0 is a partial, but not TP1 -> do NOT touch L1_tp1Hit or c_tp1Hits here.
 
@@ -3810,6 +3842,38 @@ if exitOk and bullTP1Hit
 if exitOk and bearTP0Hit
     strategy.close("SHORT", qty_percent=bearTP0_Pct, comment="BEAR_TP0")
     bearTP0Done := true
+
+// ---- L2 PARTIAL exit window log (TP0) ----
+if exportL2 and barstate.isconfirmed and bearTP0Hit
+    string _evtType = "EXIT_BEAR"         // keep exit taxonomy consistent
+    int _mask = 0
+    bool _isEntry = false
+    bool _isExit  = true
+    bool _isCand  = false
+    // IMPORTANT: TP0 is partial, but we still log it as an exit event for Layer-2 analytics
+    if L2_active
+        L2_dropCnt += 1
+    else
+        L2_eventId += 1
+        L2_active := true
+        L2_evtBar := bar_index
+        L2_evtType := _evtType
+        L2_exitReason := "BEAR_TP0"
+        L2_blockedMask := _mask
+        L2_isEntryEvt := _isEntry
+        L2_isExitEvt := _isExit
+        L2_isCandEvt := _isCand
+        L2_fwdLeft := l2WindowBars
+        int sz = array.size(l2_bi)
+        if sz > 0
+            int curIdx = sz - 1
+            int maxBack = math.min(l2WindowBars, curIdx)
+            // Backfill: -N..-1
+            for j = 1 to maxBack
+                int i = maxBack - j + 1
+                int idx = curIdx - i
+                l2_emitRow(idx, -i, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
+
 
     // NOTE: TP0 is a partial, but not TP1 -> do NOT touch L1_tp1Hit or c_tp1Hits here.
 
