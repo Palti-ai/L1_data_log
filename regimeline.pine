@@ -3733,12 +3733,12 @@ float bearTP0Price = (inPos and posTag == "BEAR")
      ? (strategy.position_avg_price - atr * bearTP0_ATR)
      : na
 
-bool bearTP0Hit =
-     inPos and
-     (posTag == "BEAR") and
-     (not bearTP0Done) and
-     (not na(bearTP0Price)) and
-     (close <= bearTP0Price)
+bool bearTP0Touch  = inPos and (posTag == "BEAR") and (not bearTP0Done) and (not na(bearTP0Price)) and (low <= bearTP0Price)
+bool bearTP0Hit    = bearTP0Touch and (close <= bearTP0Price)
+
+// optional: allow wick-touch TP0 only when the touch candle is decisively bearish
+bool bearTP0TouchConfirmed = bearTP0Touch and (close < open)
+bearTP0Hit := bearTP0Hit or bearTP0TouchConfirmed
 
 // Bear TP1 target: 0.8R based on stop distance (bearReclLvl - entry). Fallback to ATR target if stop distance is unknown.
 float bearRisk = (inPos and posTag == "BEAR" and not na(bearReclLvl)) ? (bearReclLvl - strategy.position_avg_price) : na
