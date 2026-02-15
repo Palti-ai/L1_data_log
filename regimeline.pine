@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.30 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.31 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -1785,7 +1785,7 @@ float bearTrailStopLvl =
 
 // Submit stop exits every bar while in BEAR short (intrabar capable).
 if inPos and isShort and (posTag == "BEAR")
-    if not na(bearInvStopLvl)
+    if bearTP1Done and not na(bearInvStopLvl)
         strategy.exit("BEAR_INV", from_entry="SHORT", stop=bearInvStopLvl, comment="BEAR_INV")
     if not na(bearTrailStopLvl)
         strategy.exit("BEAR_TRAIL", from_entry="SHORT", stop=bearTrailStopLvl, comment="BEAR_TRAIL")
