@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.29 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.30 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -257,7 +257,7 @@ bearBreakLookback  = input.int(9, "Bear SHORT: breakdown must break last N-bar l
 bearArmMaxBars     = input.int(14, "Bear SHORT: expire retest in N bars", group=grpBear, minval=3)
 bearTS_Bars        = input.int(24, "Bear SHORT time-stop bars", group=grpBear, minval=5)
 bearTS_MinMFE_ATR  = input.float(0.30, "Bear TS only if MFE < ATR*x", group=grpBear, step=0.05)
-useLegacyBearInvalidClose = input.bool(false, "Use legacy BEAR-INVALID close-branch (debug only)", group=grpBearShort)
+useLegacyBearInvalidClose = input.bool(false, "Use legacy BEAR-INVALID close-branch (debug only)", group=grpBear)
 
 // --- Bear SHORT: TP1 + post-TP1 protection (runner-safe) ---
 bearTP1_ATR       = input.float(1.65, "Bear TP1 (ATR*x) — partial", group=grpBear, step=0.25)
@@ -973,6 +973,26 @@ sigOrId(_comment, _id) =>
 //------------------------------
 posOpened = barstate.isconfirmed and (strategy.position_size != 0) and (strategy.position_size[1] == 0)
 posClosed = barstate.isconfirmed and (strategy.position_size == 0) and (strategy.position_size[1] != 0)
+
+//====================================================
+// Post-close hook: if a trade exited with BEAR_INV on this bar,
+// apply the same Bear->RangeB downgrade bookkeeping as BEAR-INVALID.
+// Works for intrabar stop fills because it reads closedtrades.
+//====================================================
+var int _ctSeenForDowngrade = 0
+
+if barstate.isconfirmed
+    int ctNow2 = strategy.closedtrades
+    if ctNow2 > _ctSeenForDowngrade
+        int k2 = ctNow2 - 1
+        if strategy.closedtrades.exit_bar_index(k2) == bar_index
+            string ex2 = strategy.closedtrades.exit_comment(k2)
+            if ex2 == "BEAR_INV" or ex2 == "BEAR-INVALID"
+                lastBearShortExitBar := bar_index
+                pendingReset := true
+                forcedMode := Mode.RangeB
+                forcedUntilBar := bar_index + downgradeBars
+    _ctSeenForDowngrade := ctNow2
 
 //------------------------------
 // L1: commit pending entry snapshot on actual fill (posOpened)
@@ -4581,10 +4601,6 @@ if exitOk and inPos
         // Downgrade Bear->RangeB after bear exit (flat override)
         forcedMode := Mode.RangeB
         forcedUntilBar := bar_index + downgradeBars
-
-    // 1.0) BEAR_INV intrabar stop (earlier than close-based invalidation)
-    if inPos and isShort and (posTag == "BEAR") and not na(bearInvStopLvl)
-        strategy.exit("BEAR_INV", from_entry="SHORT", stop=bearInvStopLvl, comment="BEAR_INV")
 
     // 1.1) Bear SHORT invalidation
     else if bearShortInvalid and useLegacyBearInvalidClose
