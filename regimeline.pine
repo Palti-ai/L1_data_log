@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.28 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.33 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -2623,7 +2623,7 @@ if exportL2 and not l2HeaderDone and barstate.isconfirmed
 l2HeaderDone := true
 
 // ---- Emit one row (from buffer index) ----
-l2_emitRow(_idx, _rel, _isEntry, _isExit, _exitReason, _isCand, _blkMask) =>
+l2_emitRow(_idx, _rel, _isEntry, _isExit, _exitReason, _isCand, _blockedMask) =>
 
     // sanitize string fields that may contain commas
     string coin     = l2_sanitize(syminfo.ticker)
@@ -2701,7 +2701,7 @@ l2_emitRow(_idx, _rel, _isEntry, _isExit, _exitReason, _isCand, _blkMask) =>
       str.tostring(_isExit  ? 1 : 0) + "," +
       exitR + "," +
       str.tostring(_isCand ? 1 : 0) + "," +
-      str.tostring(_blkMask) + "," +
+      str.tostring(_blockedMask) + "," +
       tagS + "," +
       posStS + "," +
       pbAgeS + "," +
@@ -2729,7 +2729,7 @@ if exportL2 and barstate.isconfirmed and L2_active
         if sz2 > 0
             int curIdx2 = sz2 - 1
             int rel = bar_index - L2_evtBar
-            l2_emitRow(curIdx2, rel, false, false, "", false, 0)
+            l2_emitRow(curIdx2, rel, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
         L2_fwdLeft -= 1
         if L2_fwdLeft <= 0
             L2_active := false
@@ -3148,10 +3148,10 @@ if exportL2 and barstate.isconfirmed and bullPBEnter
             for j = 1 to maxBackPB
                 int i = maxBackPB - j + 1
                 int idx = curIdxPB - i
-                l2_emitRow(idx, -i, false, false, "", true, pbVetoMask)
+                l2_emitRow(idx, -i, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, true, pbVetoMask)
 
             // Emit decision bar as rel=0 (this is the PB decision time row)
-            l2_emitRow(curIdxPB, 0, false, false, "", true, pbVetoMask)
+            l2_emitRow(curIdxPB, 0, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, true, pbVetoMask)
 
 // ==============================
 // PBDBG: log PB candidates (EXEC + optional BLOCK) to Pine Logs
@@ -3420,8 +3420,7 @@ if barstate.isconfirmed and bullAddEnter
                 for j = 1 to maxBackA
                     int i = maxBackA - j + 1
                     int idx = curIdxA - i
-                    l2_emitRow(idx, -i, false, false, "", false, 0)
-
+                    l2_emitRow(idx, -i, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
 
 if rangeAEnter
     strategy.entry("LONG", strategy.long, comment="RANGE_A")
@@ -3504,9 +3503,7 @@ if entered and exportL2 and barstate.isconfirmed
             for j = 1 to maxBack
                 int i = maxBack - j + 1
                 int idx = curIdx - i
-                l2_emitRow(idx, -i, false, false, "", false, 0)
-
-
+                l2_emitRow(idx, -i, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
 
     // Initialize ADD reference on fresh Bull entries
     if entryModeTag == "BULL"
@@ -3663,8 +3660,7 @@ if exportL2 and barstate.isconfirmed and (not inPos)
                 for j = 1 to maxBack
                     int i = maxBack - j + 1
                     int idx = curIdx - i
-                    l2_emitRow(idx, -i, false, false, "", false, 0)
-
+                    l2_emitRow(idx, -i, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
 
 //====================================================
 // L1 max-fav/max-adv tracking (bar index + price)
@@ -4065,10 +4061,7 @@ if exportL2 and barstate.isconfirmed and doExit
             for j = 1 to maxBack
                 int i = maxBack - j + 1
                 int idx = curIdx - i
-                l2_emitRow(idx, -i, false, false, "", false, 0)
-
-
-
+                l2_emitRow(idx, -i, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
 
 // Apply deferred resets once we are actually flat
 if pendingReset and (not inPos)
