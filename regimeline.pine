@@ -1369,13 +1369,14 @@ bearAcceptVetoLowAdx = (adx < 20)
 bearAcceptVetoWeakWickPrev = (not na(adx[1])) and (not na(bodyPct[1])) and (adx[1] < 20) and (bodyPct[1] < 0.12)
 bearAcceptImpulseEnter = barstate.isconfirmed and (not inPos) and bearShortOn and bearAcceptEntryOn and (bearActive and not na(bearAcceptedBar) and (bar_index == bearAcceptedBar)) and shortCooldownOk and bearShortADXOk and (adx >= bearShortADXMin) and (close < bearBreakLvl) and (close < open) and (bodyPct >= bearMinBodyPct) and bearCloseNearLowOk and (not bearAcceptVetoLowAdx)
 
-// EARLY (pre-accept) entry: first breakdown close (only when bearNeed2Cl=true)
+// EARLY entry (pre-accept): first breakdown close when bearNeed2Cl=true
 bearEarlyImpulseEnter =
      barstate.isconfirmed and (not inPos) and bearShortOn and bearEarlyEnterOn and bearNeed2Cl and
-     (not bearActive) and (not pendingBear) and bearBreakNow and
+     (not bearActive) and pendingBear and bearBreakNow and
      shortCooldownOk and bearShortADXOk and (adx >= bearShortADXMin) and
      (close < open) and (bodyPct >= bearMinBodyPct) and bearCloseNearLowOk and
      (not bearAcceptVetoLowAdx)
+
 
 // Cancel pendingBear if price reclaims above the reclaim level (close-based truth)
 bearPendingCancel = pendingBear and not na(bearReclLvl) and (close > bearReclLvl) and (not bearNeed2Cl or close[1] > bearReclLvl)
@@ -2805,21 +2806,18 @@ bearReentryOk = na(lastBearShortExitBar) or (bar_index - lastBearShortExitBar >=
 if barstate.isconfirmed and bearReentryOk
     c_bearReentryOk += 1
 
-bearShortEnter =
-     (bearAcceptImpulseEnter) or
-     (bearEarlyImpulseEnter) or
-     ( barstate.isconfirmed and (not inPos) and bearShortBreakdownNow and bearLocalDowntrendOk and (close < emaFast) and bearLockoutOk and bearReentryOk and shortCooldownOk and ( bearAllowContinuation or (not bearKillUseHTFveto or htfOffForRA) ) )
+bearShortEnter = (bearAcceptImpulseEnter) or (bearEarlyImpulseEnter) or ( barstate.isconfirmed and (not inPos) and bearShortBreakdownNow and bearLocalDowntrendOk and (close < emaFast) and bearLockoutOk and bearReentryOk and shortCooldownOk and ( bearAllowContinuation or (not bearKillUseHTFveto or htfOffForRA) ) )
 
 
 if bearShortEnter
-    strategy.entry("SHORT", strategy.short, comment = (not bearEarlyTagOn) ? "" : (bearAcceptImpulseEnter ? "BEAR_S_ACCEPT" : bearEarlyImpulseEnter  ? "BEAR_S_BREAK1" : "BEAR_S_BREAKDOWN"))
+    strategy.entry("SHORT", strategy.short, comment = (bearAcceptImpulseEnter ? "BEAR_S_ACCEPT" : bearEarlyImpulseEnter ? "BEAR_S_BREAK1" : "BEAR_S_BREAKDOWN"))
 
     posTag := "BEAR"
     entryModeTag := "BEAR"
     // L1 pending entry (committed on actual fill)
     L1_pendDir  := "SHORT"
     L1_pendReg  := "BEAR"
-    L1_pendArch := bearAcceptImpulseEnter ? "BEAR_S_ACCEPT" : bearEarlyImpulseEnter  ? "BEAR_S_BREAK1" : "BEAR_S_BREAKDOWN"
+    L1_pendArch := bearAcceptImpulseEnter ? "BEAR_S_ACCEPT" : bearEarlyImpulseEnter ? "BEAR_S_BREAK1" : "BEAR_S_BREAKDOWN"
 
     L1_pendEntryEngine  := "BEAR_ENTRY"
     L1_pendHtfState     := htfOnNow ? "HTF_ON" : "HTF_OFF"
