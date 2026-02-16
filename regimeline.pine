@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.28 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v7.00 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -627,8 +627,11 @@ var int   bullEndBar   = na
 var float bullEndY     = na
 var bool bullTP1Done = false
 var bool bullTP0Done = false
-var bool bearTP1Done = false
-var bool bearTP0Done = false
+var bool bearTP1Done = false 
+var bool bearTP0Done = false 
+var int bearTP0Bar = na 
+var float bearTP0Lo = na 
+var float bearTP0EntryPx = na
 var int bullNoNewHiStreak = 0
 var int bullLastAddBar = na
 var float bullAddRefHi = na   // last add/entry reference high-water mark
@@ -2847,9 +2850,12 @@ if bearShortEnter
 
     entered := true
     entryMode := Mode.Wait  // Bear remains overlay; do not force router mode
-    bearTP1Done := false
-    bearTP0Done := false
-
+    bearTP1Done := false 
+    bearTP0Done := false 
+    bearTP0Bar := na 
+    bearTP0Lo := na 
+    bearTP0EntryPx := na 
+   
     // Consume latch
     bearPBSeen := false
     bearPBBar  := na
@@ -3763,10 +3769,16 @@ if bullTP1Hit
     bullTP1Bar := bar_index
 if not inPos
     bullTP1Bar := na
-if not inPos
-    bearTP1Done := false
-if not inPos
-    bearTP0Done := false
+if not inPos 
+    bearTP1Done := false 
+if not inPos 
+    bearTP0Done := false 
+if not inPos 
+    bearTP0Bar := na 
+if not inPos 
+    bearTP0Lo := na 
+if not inPos 
+    bearTP0EntryPx := na
 if not inPos
     bullTP0Done := false
 
@@ -3811,9 +3823,12 @@ if exitOk and bullTP1Hit
         L1_lastPartialTime := time
         L1_partialReasons := (L1_partialReasons == "" ? "BULL_TP1" : (L1_partialReasons + "|" + "BULL_TP1"))
 
-if exitOk and bearTP0Hit
-    strategy.close("SHORT", qty_percent=bearTP0_Pct, comment="BEAR_TP0")
-    bearTP0Done := true
+if exitOk and bearTP0Hit 
+    strategy.close("SHORT", qty_percent=bearTP0_Pct, comment="BEAR_TP0") 
+    bearTP0Done := true 
+    bearTP0Bar := bar_index 
+    bearTP0Lo := tradeLo 
+    bearTP0EntryPx := strategy.position_avg_price
 
     // NOTE: TP0 is a partial, but not TP1 -> do NOT touch L1_tp1Hit or c_tp1Hits here.
 
@@ -3909,6 +3924,14 @@ raTimeStop = inPos and posTag=="RANGEA" and (raBarsIn >= raTS_Bars)
 
 // Bear SHORT time-stop (must pay quickly)
 bearMFE = (inPos and posTag=="BEAR") ? (strategy.position_avg_price - tradeLo) : 0.0
+
+// ---- BEAR post-TP0 proof window (remainder-only) ----
+int bearTP0ProofWinBars = 2
+float bearTP0ProofExtPct = 0.30
+float bearTP0AddExtPct = (inPos and posTag=="BEAR" and bearTP0Done and not na(bearTP0Bar) and not na(bearTP0Lo) and not na(bearTP0EntryPx) and bearTP0EntryPx > 0) ? ((bearTP0Lo - tradeLo) / bearTP0EntryPx) * 100.0 : 0.0
+bool bearTP0ProofDue = inPos and posTag=="BEAR" and bearTP0Done and (not bearTP1Done) and (not na(bearTP0Bar)) and (bar_index >= (bearTP0Bar + bearTP0ProofWinBars))
+bool bearTP0NoExtExit = bearTP0ProofDue and (bearTP0AddExtPct < bearTP0ProofExtPct)
+
 bearBarsIn = (inPos and posTag=="BEAR" and not na(lastEntryBar)) ? (bar_index - lastEntryBar) : 0
 bearTimeStop = inPos and posTag=="BEAR" and (bearBarsIn >= bearTS_Bars) and (bearMFE < atr * bearTS_MinMFE_ATR)
 
@@ -3953,15 +3976,19 @@ if exitOk and inPos
 
     // 3) Short invalidations
     // 3a) BEAR trail exit (post-TP1 trail reclaim)
-    if (not doExit) and bearInvPostTrail
-        doExit := true
-        exitReason := "BEAR_TRAIL"
+    if (not doExit) and bearInvPostTrail 
+        doExit := true 
+        exitReason := "BEAR_TRAIL" 
         exitReg := "BEAR"
-
+    // 3a.5) BEAR post-TP0 no-extension exit (remainder proof failed)
+    if (not doExit) and bearTP0NoExtExit 
+        doExit := true 
+        exitReason := "BEAR_TP0_NOEXT" 
+        exitReg := "BEAR"
     // 3b) Other BEAR invalidations
-    if (not doExit) and bearShortInvalid
-        doExit := true
-        exitReason := "BEAR_INV"
+    if (not doExit) and bearShortInvalid 
+        doExit := true 
+        exitReason := "BEAR_INV" 
         exitReg := "BEAR"
 
     if (not doExit) and rbShortInvalid
