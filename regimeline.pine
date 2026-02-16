@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v6.39 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v6.28 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -274,7 +274,6 @@ bearTrailBuf_ATR  = input.float(0.25, "Bear post-TP1: EMA trail buffer (ATR*x)",
 bearInvNeed2Cl     = input.bool(true, "Bear SHORT invalidation: require 2 closes above bearReclLvl", group=grpBear)
 bearAdxMin        = input.float(20, "Bear SHORT: require ADX >=", group=grpBear, step=0.5)
 bearPB_CloseUnder_ATR = input.float(0.05, "Bear SHORT: retest close must be UNDER breakLvl by ATR*x", group=grpBear, step=0.01)
-bearFailBars = input.int(6, "BEAR early-fail bars (no TP0 + reclaim entry => exit)", group=grpBear, minval=1)
 
 rbUseSnapshotAccept = input.bool(true, "RB attempt acceptance uses snapshot (strict)", group=grpRB)
 
@@ -492,12 +491,11 @@ closeLoc = (rng > 0) ? ((close - low) / rng) : 0.5
 bearCloseNearLowOk = closeLoc <= bearShortCloseNearLo
 rbCloseNearLowOk   = closeLoc <= rbShortCloseNearLo
 
+
+
 inPos   = strategy.position_size != 0
 isLong  = strategy.position_size > 0
 isShort = strategy.position_size < 0
-
-if barstate.isconfirmed and inPos and posTag == "BEAR"
-    bearBarsSinceEntry += 1
 
 //====================================================
 // Mode enum + helpers
@@ -631,7 +629,6 @@ var bool bullTP1Done = false
 var bool bullTP0Done = false
 var bool bearTP1Done = false
 var bool bearTP0Done = false
-var int bearBarsSinceEntry = 0
 var int bullNoNewHiStreak = 0
 var int bullLastAddBar = na
 var float bullAddRefHi = na   // last add/entry reference high-water mark
@@ -2852,7 +2849,6 @@ if bearShortEnter
     entryMode := Mode.Wait  // Bear remains overlay; do not force router mode
     bearTP1Done := false
     bearTP0Done := false
-    bearBarsSinceEntry := 0
 
     // Consume latch
     bearPBSeen := false
@@ -3617,6 +3613,9 @@ bearBlkMask += ((not bearReentryOk) ? BLK_SPACING : 0)
 bearBlkMask += ((not shortCooldownOk) ? BLK_HTF : 0)
 bearBlkMask += ((not bearLocalDowntrendOk) ? BLK_OTHER : 0)
 
+
+
+
 // ---- L2 window log: CANDIDATES (missed opportunities) ----
 if exportL2 and barstate.isconfirmed and (not inPos)
     string _evtType = ""
@@ -3770,9 +3769,6 @@ if not inPos
     bearTP0Done := false
 if not inPos
     bullTP0Done := false
-if not inPos 
-    bearBarsSinceEntry := 0
-
 
 //====================================================
 // Bull TP0 partial (early de-risk; mirrors BEAR_TP0)
@@ -3814,9 +3810,6 @@ if exitOk and bullTP1Hit
         L1_lastPartialBar := bar_index
         L1_lastPartialTime := time
         L1_partialReasons := (L1_partialReasons == "" ? "BULL_TP1" : (L1_partialReasons + "|" + "BULL_TP1"))
-
-bool bearFailEarly = exitOk and inPos and (posTag == "BEAR") and (not bearTP0Done) and (bearBarsSinceEntry >= 6) and (close > strategy.position_avg_price)
-if bearFailEarly closeShortAll("BEAR_FAIL_EARLY")
 
 if exitOk and bearTP0Hit
     strategy.close("SHORT", qty_percent=bearTP0_Pct, comment="BEAR_TP0")
