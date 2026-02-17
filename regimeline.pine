@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.02 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.01 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -1728,26 +1728,10 @@ bullPostStructInvalid =
 
 bullCloseInvalid = bullPreInvalid or bullPostTrailInvalid or bullPostStructInvalid
 
-// --- BEAR reclaim invalidation (pre-TP1) ---
-// Surgical: accelerate reclaim-exit ONLY for a small set of coins where BEAR_RECLAIM_EXIT can go deeply negative
-bool bearFFCoin = (syminfo.ticker == "ETHUSDT.P") or (syminfo.ticker == "BCHUSD.P") or (syminfo.ticker == "LQTYUSDT.P")
-
-// Local (do NOT reuse bearBarsIn/bearMFE identifiers defined later in the file)
-int   bearBarsInInv = (inPos and (posTag == "BEAR") and not na(lastEntryBar)) ? (bar_index - lastEntryBar) : 0
-float bearMFEInv    = (inPos and (posTag == "BEAR")) ? (strategy.position_avg_price - tradeLo) : 0.0
-
-// Thesis-failed state: enough time in trade + still no meaningful MFE
-bool bearFailState = bearFFCoin and inPos and (posTag == "BEAR") and (not bearTP1Done) and (bearBarsInInv >= 12) and (bearMFEInv < atr * 0.35)
-
-// Strong bull reclaim candle (reversal impulse)
-bool bearStrongBull = (close > open) and (bodyPct >= 0.60) and (closeLoc >= 0.70)
-
-// Fail-fast override: if reclaim happens while thesis already failed, do NOT require the 2nd close
-bool bearInvFailFast = bearFailState and not na(bearReclLvl) and (close > bearReclLvl) and bearStrongBull
-
-// Base reclaim invalidation, with 2-close requirement unless fail-fast override is active
-bearInvPre = inPos and (posTag == "BEAR") and (not bearTP1Done) and not na(bearReclLvl) and (close > bearReclLvl) and ((not bearInvNeed2Cl) or (close[1] > bearReclLvl) or bearInvFailFast)
-
+// Bear SHORT invalidation (split: pre-TP1 vs post-TP1 runner protection)
+bearInvPre =
+     inPos and (posTag == "BEAR") and (not bearTP1Done) and not na(bearReclLvl) and
+     (close > bearReclLvl) and (not bearInvNeed2Cl or close[1] > bearReclLvl)
 
 bearProt0Level = (inPos and posTag == "BEAR") ? (strategy.position_avg_price + atr * bearProt0Buf_ATR) : na
 bearInvPostTP0Protect =
