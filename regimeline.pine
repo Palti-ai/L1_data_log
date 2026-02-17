@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.03 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.04 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -289,6 +289,14 @@ bearFailReclCap_ATR        = input.float(1.20, "Bear: reclaim cap = entry + ATR*
 bearFailReclNeedStrongBull = input.bool(true,  "Bear: cap applies only on strong bull reclaim candle", group=grpBear)
 bearFailReclMinBodyPct     = input.float(0.60, "Bear: strong bull bodyPct >=", group=grpBear, step=0.05, minval=0.0, maxval=1.0)
 bearFailReclMinCloseLoc    = input.float(0.70, "Bear: strong bull closeLoc >=", group=grpBear, step=0.05, minval=0.0, maxval=1.0)
+
+// --- BEAR fail-stop (pre-TP1): disaster protection for violent reversals ---
+// Purpose: cut rare BEAR_RECLAIM_EXIT disasters when reclaim comes too late.
+// Activation is intentionally strict to avoid impacting normal BEAR winners.
+bearFailStopOn          = input.bool(true,  "Bear: fail-stop (pre-TP1) on disaster reversal", group=grpBear)
+bearFailStopMinBars     = input.int(24,     "Bear fail-stop: min bars in trade", group=grpBear, minval=1, maxval=500)
+bearFailStopMinMAE_Pct  = input.float(8.0,  "Bear fail-stop: MAE% >=", group=grpBear, step=0.25, minval=0.0, maxval=50.0)
+bearFailStopMinBodyPct  = input.float(0.70, "Bear fail-stop: bull bodyPct >=", group=grpBear, step=0.05, minval=0.0, maxval=1.0)
 
 rbUseSnapshotAccept = input.bool(true, "RB attempt acceptance uses snapshot (strict)", group=grpRB)
 
@@ -1754,6 +1762,23 @@ bool bearCapArmed   = bearFailState and (not bearFailReclNeedStrongBull or bearS
 // Confirmation-only fail-fast: bypass 2-close requirement only AFTER reclaim has already started
 bool bearFailFast2ClBypass = bearFailState and bearInvNeed2Cl and bearStrongBull and not na(bearReclLvl) and (close > bearReclLvl)
 
+// Disaster fail-stop: if thesis has failed and MAE is already huge, exit on violent bull reversal.
+// Not tied to bearReclLvl (fixes cases where reclaim is crossed too late).
+float bearMAE_pct_FS = (inPos and (posTag == "BEAR") and strategy.position_avg_price > 0) ?
+     100.0 * (tradeHi - strategy.position_avg_price) / strategy.position_avg_price : 0.0
+
+bool bearFailStopBull = (close > open) and (bodyPct >= bearFailStopMinBodyPct) and (closeLoc >= bearFailReclMinCloseLoc)
+// Local bars-in for fail-stop (do not depend on bearBarsIn order)
+int bearBarsInFS = (inPos and (posTag == "BEAR") and not na(lastEntryBar)) ? (bar_index - lastEntryBar) : 0
+
+bool bearInvFailStop =
+     bearFailStopOn and
+     inPos and (posTag == "BEAR") and isShort and (not bearTP1Done) and
+     bearFailState and
+     (bearBarsInFS >= bearFailStopMinBars) and
+     (bearMAE_pct_FS >= bearFailStopMinMAE_Pct) and
+     bearFailStopBull
+
 // --- Effective reclaim level ---
 // Default: structural reclaim level (bearReclLvl).
 
@@ -1780,7 +1805,7 @@ bearInvPostTrail = inPos and (posTag == "BEAR") and bearTP1Done and bearTrailOn 
 if exportToLogs and inPos and (posTag == "BEAR") and bearTP1Done and bearTrailOn and not na(bearTrailLevel)
     L1_trailEver := true
 
-bearShortInvalid = bearInvPre or bearInvPostTP0Protect or bearInvPostProtect or bearInvPostTrail
+bearShortInvalid = bearInvPre or bearInvPostTP0Protect or bearInvPostProtect or bearInvPostTrail or bearInvFailStop
 
 // RB SHORT invalidation: reclaim above RB value boundary (close-based, optional 2-close)
 rbSInvLvl = (not na(rbSValue) ? (rbSValue + atr * rbS_InvBuf_ATR) : na)
@@ -4011,6 +4036,11 @@ if exitOk and inPos
     if (not doExit) and bearTP0NoExtExit 
         doExit := true 
         exitReason := "BEAR_TP0_NOEXT" 
+        exitReg := "BEAR"
+    // BEAR fail-stop (pre-TP1): disaster reversal
+    if (not doExit) and bearInvFailStop
+        doExit := true
+        exitReason := "BEAR_FAILSTOP"
         exitReg := "BEAR"
     // 3b) Other BEAR invalidations
     if (not doExit) and bearShortInvalid 
