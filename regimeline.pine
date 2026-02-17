@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.01 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.02 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -2739,9 +2739,17 @@ l2_emitRow(_idx, _rel, _isEntry, _isExit, _exitReason, _isCand, _blkMask) =>
       pbAgeVetoS + "," +
       pbMinAgeS + "," +
       pbMajNowS + "," +
-      pbLastImpS
+      pbAgeVetoS + "," + 
+      pbMinAgeS + "," + 
+      pbMajNowS + "," + 
+      pbLastImpS + "," + 
+      str.tostring(bearReclLvl) + "," + 
+      str.tostring(bearInvNeed2Cl ? 1 : 0) + "," + 
+      str.tostring(bearReclaimCloseCnt) + "," + 
+      str.tostring(bearTP0Done ? 1 : 0) + "," + 
+      str.tostring(bearTP1Done ? 1 : 0) + "," + 
+      str.tostring(L2_bearReclLvlEff)
     )
-
 
 // ---- Forward emission (next +N bars) ----
 if exportL2 and barstate.isconfirmed and L2_active
