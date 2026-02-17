@@ -939,7 +939,8 @@ if exportToLogs and barstate.isfirst
       "pbVetoMaskEnt,pbMajorImpulseEnt,pbImpulseAgeBarsEnt,pbStallCountEnt,pbHighFailEnt,pbScoreEnt," +
       "pbAdxSlopeEnt,pbAgeBarsEnt,pbNoNewHiStreakEnt,pbDepthAtrEnt,pbExpAgeBarsEnt,pbTouchOkEnt,pbHHProofOkEnt," +
       "bearPendingEnt,bearActiveEnt,bearBreakLvlEnt,bearReclLvlEnt,bearReclaimCntEnt,bearPBSeenEnt,bearPBBarEnt,lastBearExitBarEnt," +
-      "bearShortADXOkEnt,bearCloseNearLowEnt,bearAdxSlopeEnt,bearHtfOnEnt,bearHtfFlipEnt,bearAllowMaskEnt,bearVetoMaskEnt"
+      "bearShortADXOkEnt,bearCloseNearLowEnt,bearAdxSlopeEnt,bearHtfOnEnt,bearHtfFlipEnt,bearAllowMaskEnt,bearVetoMaskEnt" +
+      "bearReclLvl,bearInvNeed2Cl,bearReclaimCnt,bearTP0Done,bearTP1Done,bearFailState,bearBarsIn,bearMFEpct,bearMAEpct,bearReclLvlEff"
       )
 
 
@@ -2613,6 +2614,18 @@ var int L2_pbLastMajorImpBar = na   // bar_index
 var int    L2_dropCnt      = 0
 
 var bool l2HeaderDone = false
+
+// --- L2: BEAR reclaim telemetry (order-safe; no behavior change) ---
+int   L2_bearBarsIn = (inPos and (posTag == "BEAR") and not na(lastEntryBar)) ? (bar_index - lastEntryBar) : 0
+
+float L2_bearMFEpct = (inPos and (posTag == "BEAR") and strategy.position_avg_price > 0) ?
+     100.0 * (strategy.position_avg_price - tradeLo) / strategy.position_avg_price : na
+
+float L2_bearMAEpct = (inPos and (posTag == "BEAR") and strategy.position_avg_price > 0) ?
+     100.0 * (tradeHi - strategy.position_avg_price) / strategy.position_avg_price : na
+
+// Keep this a pure "read" expression; DO NOT introduce new logic here.
+float L2_bearReclLvlEff = bearReclLvl
 
 if exportL2 and not l2HeaderDone and barstate.isconfirmed
     log.info(
