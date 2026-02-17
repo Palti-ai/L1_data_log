@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v7.00 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
+const string STRAT_TITLE = "Regimeline v7.01 — Strategy v1.0 FULL (Router+Modes+Reanchor+TimeStops+Scoring+Logging)"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -120,6 +120,12 @@ bullPBFreshMinAgeBars    = input.int(24,     "Apply only if bull age >= bars",  
 // ---- PB Expansion-Age (NEW axis) ----
 bullPBUseExpAge          = input.bool(true,  "PB use Expansion-Age veto", group=grpBull)
 bullPBMaxExpAgeBars      = input.int(18,     "PB max bars since last expansion", group=grpBull, minval=1)
+
+// --- PB Late-ExpAge + Weak Candle veto (Candidate) ---
+// VETO if bullPBExpAgeBars >= N AND bodyPct <= X
+bullPBUseLateExpAgeBodyVeto = input.bool(true, "PB veto: late ExpAge + weak candle", group=grpBull)
+bullPBLateExpAgeBars_VetoN   = input.int(60, "PB veto: ExpAge bars >=", group=grpBull, minval=1, maxval=500)
+bullPBLateBodyPct_VetoMax    = input.float(0.70, "PB veto: bodyPct <=", group=grpBull, step=0.05, minval=0.0, maxval=1.0)
 
 // --- Bull Acceptance-Compression entry (no PB) ---
 bullCompOn = input.bool(true, "Bull COMP: enable acceptance-compression entry", group=grpBull)
@@ -2762,18 +2768,15 @@ bullCompEnter = barstate.isconfirmed and (not inPos) and (mode == Mode.Bull) and
      (not bullStartEntry) and (not bullImpulseDone) and
      bullLocalTrendOk and htfBullOk and adxBullExecOk and (not bullUseDMI or (pdi > mdi))
 
+// --- PB Expansion-Age veto (NEW) ---
+// ExpansionAge = bars since last bull-leg structural expansion (new high)
+int bullPBExpAgeBars = na(bullLastExpansionBar) ? 999999 : (bar_index - bullLastExpansionBar)
 
-bullPBEnter =
-     barstate.isconfirmed and
-     (not inPos) and (mode == Mode.Bull) and
-     scoreGateOk(Mode.Bull) and
-     bullPBSeen and bullReclaimNow and
-     (not bullStartEntry) and
-     (not bullImpulseDone) and
-     bullLocalTrendOk and
-     htfBullOk and
-     (not bullUseDMI or (pdi > mdi)) and
-     adxBullPBExecOk
+// Candidate: late-expansion-age + weak entry candle veto
+// VETO if ExpAge >= N AND bodyPct <= X
+bool bullPBLateExpAgeBodyVeto = bullPBUseLateExpAgeBodyVeto and (bullPBExpAgeBars >= bullPBLateExpAgeBars_VetoN) and (bodyPct <= bullPBLateBodyPct_VetoMax)
+
+bullPBEnter = barstate.isconfirmed and (not inPos) and (mode == Mode.Bull) and scoreGateOk(Mode.Bull) and bullPBSeen and bullReclaimNow and (not bullStartEntry) and (not bullImpulseDone) and bullLocalTrendOk and htfBullOk and (not bullUseDMI or (pdi > mdi)) and adxBullPBExecOk and (not bullPBLateExpAgeBodyVeto)
 
 // --- PB-Count cap: compute prospective PB number for this bar ---
 int bullPBCountNext = bullPBCount + (bullPBEnter ? 1 : 0)
@@ -2999,9 +3002,6 @@ bool bullPBFreshnessLateOk =
 
 bool bullPBFreshVeto = bullPBUseFreshness and bullPBFreshnessLateOk and (bullPBImpulseAgeBars > bullPBMaxImpulseAgeBars)
 
-// --- PB Expansion-Age veto (NEW) ---
-// ExpansionAge = bars since last bull-leg structural expansion (new high)
-int bullPBExpAgeBars = na(bullLastExpansionBar) ? 999999 : (bar_index - bullLastExpansionBar)
 
 // We only apply this veto when PB is already "late-eligible" (same philosophy as Freshness)
 bool bullPBExpAgeVeto = bullPBUseExpAge and bullPBFreshnessLateOk and (bullPBExpAgeBars > bullPBMaxExpAgeBars)
