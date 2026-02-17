@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.02 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.03 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -1751,16 +1751,14 @@ bool bearFailState = bearFailReclCapOn and inPos and (posTag == "BEAR") and isSh
 // Optional “violent reversal” candle qualifier (prevents cap from triggering on mild chop)
 bool bearStrongBull = (close > open) and (bodyPct >= bearFailReclMinBodyPct) and (closeLoc >= bearFailReclMinCloseLoc)
 bool bearCapArmed   = bearFailState and (not bearFailReclNeedStrongBull or bearStrongBull)
+// Confirmation-only fail-fast: bypass 2-close requirement only AFTER reclaim has already started
+bool bearFailFast2ClBypass = bearFailState and bearInvNeed2Cl and bearStrongBull and not na(bearReclLvl) and (close > bearReclLvl)
 
 // --- Effective reclaim level ---
 // Default: structural reclaim level (bearReclLvl).
-// Failed-thesis: cap reclaim to (entry + ATR*x) so reclaim exit cannot drift too far.
-float bearReclCapLvl = strategy.position_avg_price + atr * bearFailReclCap_ATR
-float bearReclEffLvl = (bearCapArmed and not na(bearReclLvl)) ? math.min(bearReclLvl, bearReclCapLvl) : bearReclLvl
 
 // Base reclaim invalidation, using effective reclaim level (2-close rule unchanged)
-bearInvPre = inPos and (posTag == "BEAR") and (not bearTP1Done) and not na(bearReclEffLvl) and (close > bearReclEffLvl) and (not bearInvNeed2Cl or close[1] > bearReclEffLvl)
-
+bearInvPre = inPos and (posTag == "BEAR") and (not bearTP1Done) and not na(bearReclLvl) and (close > bearReclLvl) and ((not bearInvNeed2Cl) or (close[1] > bearReclLvl) or bearFailFast2ClBypass)
 
 bearProt0Level = (inPos and posTag == "BEAR") ? (strategy.position_avg_price + atr * bearProt0Buf_ATR) : na
 bearInvPostTP0Protect =
