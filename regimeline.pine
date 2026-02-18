@@ -3194,12 +3194,8 @@ if exportL2 and barstate.isconfirmed and bullPBEnter
                 int i = maxBackPB - j + 1
                 int idx = curIdxPB - i
                 l2_emitRow(idx, -i, false, false, "", true, pbVetoMask)
-
-            // Emit decision bar as rel=0 (this is the PB decision time row)
-            l2_emitRow(curIdxPB, 0, false, false, "", true, pbVetoMask)
-            // Emit the event bar (rel=0) with correct flags/reason/mask
-            l2_emitRow(curIdx, 0, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
-
+                // Emit the event bar (rel=0) with correct flags/reason/mask
+                l2_emitRow(idx, 0, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
 
 // ==============================
 // PBDBG: log PB candidates (EXEC + optional BLOCK) to Pine Logs
@@ -3469,9 +3465,8 @@ if barstate.isconfirmed and bullAddEnter
                     int i = maxBackA - j + 1
                     int idx = curIdxA - i
                     l2_emitRow(idx, -i, false, false, "", false, 0)
-
-                // Emit the event bar (rel=0) with correct flags/reason/mask
-                l2_emitRow(curIdx, 0, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
+                    // Emit the event bar (rel=0) with correct flags/reason/mask
+                    l2_emitRow(idx, 0, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
 
 if rangeAEnter
     strategy.entry("LONG", strategy.long, comment="RANGE_A")
@@ -3555,9 +3550,8 @@ if entered and exportL2 and barstate.isconfirmed
                 int i = maxBack - j + 1
                 int idx = curIdx - i
                 l2_emitRow(idx, -i, false, false, "", false, 0)
-
-            // Emit the event bar (rel=0) with correct flags/reason/mask
-            l2_emitRow(curIdx, 0, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
+                // Emit the event bar (rel=0) with correct flags/reason/mask
+                l2_emitRow(idx, 0, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
 
 
     // Initialize ADD reference on fresh Bull entries
@@ -3716,8 +3710,8 @@ if exportL2 and barstate.isconfirmed and (not inPos)
                     int i = maxBack - j + 1
                     int idx = curIdx - i
                     l2_emitRow(idx, -i, false, false, "", false, 0)
-                // Emit the event bar (rel=0) with correct flags/reason/mask
-                l2_emitRow(curIdx, 0, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
+                    // Emit the event bar (rel=0) with correct flags/reason/mask
+                    l2_emitRow(idx, 0, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
 
 
 //====================================================
@@ -4141,8 +4135,8 @@ if exportL2 and barstate.isconfirmed and doExit
                 int i = maxBack - j + 1
                 int idx = curIdx - i
                 l2_emitRow(idx, -i, false, false, "", false, 0)
-            // Emit the event bar (rel=0) with correct flags/reason/mask
-            l2_emitRow(curIdx, 0, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
+                // Emit the event bar (rel=0) with correct flags/reason/mask
+                l2_emitRow(idx, 0, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
 
 // Apply deferred resets once we are actually flat
 if pendingReset and (not inPos)
@@ -5106,7 +5100,7 @@ if doRegimeLabels and regimeFlip
 
 
 //====================================================
-// Mode label (last bar only) — observability
+// Mode label (last bar only) — observability 
 //====================================================
 var label modeLbl = na
 var int modeLblLastBar = na
