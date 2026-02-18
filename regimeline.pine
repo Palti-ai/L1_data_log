@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.02 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.03 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -2638,7 +2638,8 @@ if exportL2 and not l2HeaderDone and barstate.isconfirmed
          "adx,adxSlope," +
          "isEntry,isExit,exitReason,isCand,blkMask,posTag,posState," +
          "pbAgeBars,pbImpAgeBars,pbFreshLateOk,pbFreshVeto,pbEnterExec,pbVetoMask," +
-         "pbExpAgeBars,pbExpAgeVeto,pbLateVeto,pbLifecycleVeto,pbAgeVeto,pbFreshMinAge,pbMajorImpulseNow,pbLastMajorImpulseBar"
+         "pbExpAgeBars,pbExpAgeVeto,pbLateVeto,pbLifecycleVeto,pbAgeVeto,pbFreshMinAge,pbMajorImpulseNow,pbLastMajorImpulseBar," +
+         "bearReclLvl,bearInvNeed2Cl,bearReclaimCnt,bearTP0Done,bearTP1Done,bearBarsIn,bearMFEpct,bearMAEpct"
     )
 
 
@@ -2654,6 +2655,15 @@ l2_emitRow(_idx, _rel, _isEntry, _isExit, _exitReason, _isCand, _blkMask) =>
     string exitR    = l2_sanitize(_exitReason)
     string tagS     = l2_sanitize(posTagToLogMode(posTag))
     string posStS   = l2_sanitize(posStateStr())
+    // ---- L2 BEAR telemetry (local, order-safe) ----
+    float l2_bearReclLvl = bearReclLvl
+    int   l2_bearInv2Cl  = bearInvNeed2Cl ? 1 : 0
+    int   l2_bearReclCnt = bearReclaimCloseCnt
+    int   l2_bearTP0     = bearTP0Done ? 1 : 0
+    int   l2_bearTP1     = bearTP1Done ? 1 : 0
+    int l2_bearBarsIn = (inPos and (posTag == "BEAR") and not na(lastEntryBar)) ? (bar_index - lastEntryBar) : 0
+    float l2_bearMFEpct = (inPos and (posTag == "BEAR") and strategy.position_avg_price > 0) ? 100.0 * (strategy.position_avg_price - tradeLo) / strategy.position_avg_price : na
+    float l2_bearMAEpct = (inPos and (posTag == "BEAR") and strategy.position_avg_price > 0) ? 100.0 * (tradeHi - strategy.position_avg_price) / strategy.position_avg_price : na
     // PBDEC fields (only populated for PB decision events; blank otherwise)
     bool isPBDec = str.startswith(evtType, "PBDEC_")
     string pbAgeS      = isPBDec ? str.tostring(L2_pbAgeBars) : ""
@@ -2743,6 +2753,14 @@ l2_emitRow(_idx, _rel, _isEntry, _isExit, _exitReason, _isCand, _blkMask) =>
       pbMinAgeS + "," + 
       pbMajNowS + "," + 
       pbLastImpS + "," + 
+      str.tostring(l2_bearReclLvl) + "," + 
+      str.tostring(l2_bearInv2Cl) + "," + 
+      str.tostring(l2_bearReclCnt) + "," + 
+      str.tostring(l2_bearTP0) + "," + 
+      str.tostring(l2_bearTP1) + "," + 
+      str.tostring(l2_bearBarsIn) + "," + 
+      str.tostring(l2_bearMFEpct) + "," + 
+      str.tostring(l2_bearMAEpct) + "," +
       str.tostring(bearReclLvl) + "," + 
       str.tostring(bearInvNeed2Cl ? 1 : 0) + "," + 
       str.tostring(bearReclaimCloseCnt) + "," + 
@@ -3179,6 +3197,9 @@ if exportL2 and barstate.isconfirmed and bullPBEnter
 
             // Emit decision bar as rel=0 (this is the PB decision time row)
             l2_emitRow(curIdxPB, 0, false, false, "", true, pbVetoMask)
+            // Emit the event bar (rel=0) with correct flags/reason/mask
+            l2_emitRow(curIdx, 0, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
+
 
 // ==============================
 // PBDBG: log PB candidates (EXEC + optional BLOCK) to Pine Logs
@@ -3449,6 +3470,8 @@ if barstate.isconfirmed and bullAddEnter
                     int idx = curIdxA - i
                     l2_emitRow(idx, -i, false, false, "", false, 0)
 
+                // Emit the event bar (rel=0) with correct flags/reason/mask
+                l2_emitRow(curIdx, 0, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
 
 if rangeAEnter
     strategy.entry("LONG", strategy.long, comment="RANGE_A")
@@ -3533,6 +3556,8 @@ if entered and exportL2 and barstate.isconfirmed
                 int idx = curIdx - i
                 l2_emitRow(idx, -i, false, false, "", false, 0)
 
+            // Emit the event bar (rel=0) with correct flags/reason/mask
+            l2_emitRow(curIdx, 0, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
 
 
     // Initialize ADD reference on fresh Bull entries
@@ -3691,6 +3716,8 @@ if exportL2 and barstate.isconfirmed and (not inPos)
                     int i = maxBack - j + 1
                     int idx = curIdx - i
                     l2_emitRow(idx, -i, false, false, "", false, 0)
+                // Emit the event bar (rel=0) with correct flags/reason/mask
+                l2_emitRow(curIdx, 0, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
 
 
 //====================================================
@@ -4114,9 +4141,8 @@ if exportL2 and barstate.isconfirmed and doExit
                 int i = maxBack - j + 1
                 int idx = curIdx - i
                 l2_emitRow(idx, -i, false, false, "", false, 0)
-
-
-
+            // Emit the event bar (rel=0) with correct flags/reason/mask
+            l2_emitRow(curIdx, 0, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
 
 // Apply deferred resets once we are actually flat
 if pendingReset and (not inPos)
