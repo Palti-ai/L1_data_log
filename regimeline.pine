@@ -2749,9 +2749,6 @@ l2_emitRow(_idx, _rel, _isEntry, _isExit, _exitReason, _isCand, _blkMask) =>
       pbAgeVetoS + "," +
       pbMinAgeS + "," +
       pbMajNowS + "," +
-      pbAgeVetoS + "," + 
-      pbMinAgeS + "," + 
-      pbMajNowS + "," + 
       pbLastImpS + "," + 
       str.tostring(l2_bearReclLvl) + "," + 
       str.tostring(l2_bearInv2Cl) + "," + 
