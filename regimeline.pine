@@ -2760,14 +2760,9 @@ l2_emitRow(_idx, _rel, _isEntry, _isExit, _exitReason, _isCand, _blkMask) =>
       str.tostring(l2_bearTP1) + "," + 
       str.tostring(l2_bearBarsIn) + "," + 
       str.tostring(l2_bearMFEpct) + "," + 
-      str.tostring(l2_bearMAEpct) + "," +
-      str.tostring(bearReclLvl) + "," + 
-      str.tostring(bearInvNeed2Cl ? 1 : 0) + "," + 
-      str.tostring(bearReclaimCloseCnt) + "," + 
-      str.tostring(bearTP0Done ? 1 : 0) + "," + 
-      str.tostring(bearTP1Done ? 1 : 0) + "," + 
-      str.tostring(L2_bearReclLvlEff)
+      str.tostring(l2_bearMAEpct)
     )
+
 
 // ---- Forward emission (next +N bars) ----
 if exportL2 and barstate.isconfirmed and L2_active
