@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.06 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.07 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -4029,7 +4029,7 @@ if exitOk and inPos
         exitReason := "BEAR_TP0_NOEXT" 
         exitReg := "BEAR"
     // 3b) Other BEAR invalidations
-    if (not doExit) and bearShortInvalid 
+    if (not doExit) and bearShortInvalid and exitReason != "BEAR_RECLAIM_EXIT" 
         doExit := true 
         exitReason := "BEAR_INV" 
         exitReg := "BEAR"
@@ -4579,6 +4579,7 @@ if exitOk and inPos
                 bearReclaimAnyCloseCnt := reclaimNow ? (nz(bearReclaimAnyCloseCnt[1]) + 1) : 0
 
                 if bearReclaimAnyCloseCnt >= bearExitReclaimBars
+                    exitReason := "BEAR_RECLAIM_EXIT"
                     strategy.close("SHORT", comment="BEAR_RECLAIM_EXIT")
                     lastBearShortExitBar := bar_index
             else
