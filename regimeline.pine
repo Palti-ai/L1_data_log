@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.08 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.01 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -606,8 +606,6 @@ bearVetoMaskNow += (htfOnNow) ? 4 : 0
 bearVetoMaskNow += (not (pendingBear or bearActive)) ? 8 : 0
 
 var int bearReclaimCloseCnt = 0
-// Counts "any reclaim" used for BEAR_RECLAIM_EXIT (level reclaim OR EMA reclaim)
-var int bearReclaimAnyCloseCnt = 0
 var int   lastRBShortExitBar = na
 
 // ---- RB SHORT execution latch (Commit S2)
@@ -941,8 +939,7 @@ if exportToLogs and barstate.isfirst
       "pbVetoMaskEnt,pbMajorImpulseEnt,pbImpulseAgeBarsEnt,pbStallCountEnt,pbHighFailEnt,pbScoreEnt," +
       "pbAdxSlopeEnt,pbAgeBarsEnt,pbNoNewHiStreakEnt,pbDepthAtrEnt,pbExpAgeBarsEnt,pbTouchOkEnt,pbHHProofOkEnt," +
       "bearPendingEnt,bearActiveEnt,bearBreakLvlEnt,bearReclLvlEnt,bearReclaimCntEnt,bearPBSeenEnt,bearPBBarEnt,lastBearExitBarEnt," +
-      "bearShortADXOkEnt,bearCloseNearLowEnt,bearAdxSlopeEnt,bearHtfOnEnt,bearHtfFlipEnt,bearAllowMaskEnt,bearVetoMaskEnt" +
-      "bearReclLvl,bearInvNeed2Cl,bearReclaimCnt,bearTP0Done,bearTP1Done,bearFailState,bearBarsIn,bearMFEpct,bearMAEpct,bearReclLvlEff,bearEnterOk,pendingBear,bearShortADXOk,htfBearOk,bearNoChaseOk"
+      "bearShortADXOkEnt,bearCloseNearLowEnt,bearAdxSlopeEnt,bearHtfOnEnt,bearHtfFlipEnt,bearAllowMaskEnt,bearVetoMaskEnt"
       )
 
 
@@ -2617,18 +2614,6 @@ var int    L2_dropCnt      = 0
 
 var bool l2HeaderDone = false
 
-// --- L2: BEAR reclaim telemetry (order-safe; no behavior change) ---
-int   L2_bearBarsIn = (inPos and (posTag == "BEAR") and not na(lastEntryBar)) ? (bar_index - lastEntryBar) : 0
-
-float L2_bearMFEpct = (inPos and (posTag == "BEAR") and strategy.position_avg_price > 0) ?
-     100.0 * (strategy.position_avg_price - tradeLo) / strategy.position_avg_price : na
-
-float L2_bearMAEpct = (inPos and (posTag == "BEAR") and strategy.position_avg_price > 0) ?
-     100.0 * (tradeHi - strategy.position_avg_price) / strategy.position_avg_price : na
-
-// Keep this a pure "read" expression; DO NOT introduce new logic here.
-float L2_bearReclLvlEff = bearReclLvl
-
 if exportL2 and not l2HeaderDone and barstate.isconfirmed
     log.info(
          "runId,tf,scriptVer,coin,eventId,evtType,evtBar,rel," +
@@ -2640,8 +2625,7 @@ if exportL2 and not l2HeaderDone and barstate.isconfirmed
          "adx,adxSlope," +
          "isEntry,isExit,exitReason,isCand,blkMask,posTag,posState," +
          "pbAgeBars,pbImpAgeBars,pbFreshLateOk,pbFreshVeto,pbEnterExec,pbVetoMask," +
-         "pbExpAgeBars,pbExpAgeVeto,pbLateVeto,pbLifecycleVeto,pbAgeVeto,pbFreshMinAge,pbMajorImpulseNow,pbLastMajorImpulseBar," +
-         "bearReclLvl,bearInvNeed2Cl,bearReclaimCnt,bearTP0Done,bearTP1Done,bearBarsIn,bearMFEpct,bearMAEpct,bearReclAbove,bearReclAbovePrev"
+         "pbExpAgeBars,pbExpAgeVeto,pbLateVeto,pbLifecycleVeto,pbAgeVeto,pbFreshMinAge,pbMajorImpulseNow,pbLastMajorImpulseBar"
     )
 
 
@@ -2657,22 +2641,6 @@ l2_emitRow(_idx, _rel, _isEntry, _isExit, _exitReason, _isCand, _blkMask) =>
     string exitR    = l2_sanitize(_exitReason)
     string tagS     = l2_sanitize(posTagToLogMode(posTag))
     string posStS   = l2_sanitize(posStateStr())
-    // ---- L2 BEAR telemetry (local, order-safe) ----
-    float l2_bearReclLvl = bearReclLvl
-    int   l2_bearInv2Cl  = bearInvNeed2Cl ? 1 : 0
-    int   l2_bearReclCnt = bearReclaimCloseCnt
-    int   l2_bearTP0     = bearTP0Done ? 1 : 0
-    int   l2_bearTP1     = bearTP1Done ? 1 : 0
-    int l2_bearBarsIn = (inPos and (posTag == "BEAR") and not na(lastEntryBar)) ? (bar_index - lastEntryBar) : 0
-    float l2_bearMFEpct = (inPos and (posTag == "BEAR") and strategy.position_avg_price > 0) ? 100.0 * (strategy.position_avg_price - tradeLo) / strategy.position_avg_price : na
-    float l2_bearMAEpct = (inPos and (posTag == "BEAR") and strategy.position_avg_price > 0) ? 100.0 * (tradeHi - strategy.position_avg_price) / strategy.position_avg_price : na
-    int l2_bearReclAbove = (not na(bearReclLvl) and close > bearReclLvl) ? 1 : 0
-    int l2_bearReclAbovePrev = (not na(bearReclLvl) and close[1] > bearReclLvl) ? 1 : 0
-    int l2_bearEnterOk     = bearShortEnter ? 1 : 0
-    int l2_pendingBear     = pendingBear ? 1 : 0
-    int l2_bearShortADXOk  = bearShortADXOk ? 1 : 0
-    int l2_htfBearOk       = htfBearOk ? 1 : 0
-    int l2_bearNoChaseOk   = bearNoChaseOk ? 1 : 0
     // PBDEC fields (only populated for PB decision events; blank otherwise)
     bool isPBDec = str.startswith(evtType, "PBDEC_")
     string pbAgeS      = isPBDec ? str.tostring(L2_pbAgeBars) : ""
@@ -2758,22 +2726,7 @@ l2_emitRow(_idx, _rel, _isEntry, _isExit, _exitReason, _isCand, _blkMask) =>
       pbAgeVetoS + "," +
       pbMinAgeS + "," +
       pbMajNowS + "," +
-      pbLastImpS + "," + 
-      str.tostring(l2_bearReclLvl) + "," + 
-      str.tostring(l2_bearInv2Cl) + "," + 
-      str.tostring(l2_bearReclCnt) + "," + 
-      str.tostring(l2_bearTP0) + "," + 
-      str.tostring(l2_bearTP1) + "," + 
-      str.tostring(l2_bearBarsIn) + "," + 
-      str.tostring(l2_bearMFEpct) + "," + 
-      str.tostring(l2_bearMAEpct)+ "," + 
-      str.tostring(l2_bearReclAbove) + "," + 
-      str.tostring(l2_bearReclAbovePrev) + "," + 
-      str.tostring(l2_bearEnterOk) + "," + 
-      str.tostring(l2_pendingBear) + "," + 
-      str.tostring(l2_bearShortADXOk) + "," + 
-      str.tostring(l2_htfBearOk) + "," + 
-      str.tostring(l2_bearNoChaseOk)
+      pbLastImpS
     )
 
 
@@ -3197,14 +3150,14 @@ if exportL2 and barstate.isconfirmed and bullPBEnter
             int curIdxPB = szPB - 1
             int maxBackPB = math.min(l2WindowBars, curIdxPB)
 
+            // Backfill: -N..-1
             for j = 1 to maxBackPB
                 int i = maxBackPB - j + 1
                 int idx = curIdxPB - i
-                l2_emitRow(idx, -i, false, false, "", false, 0)
+                l2_emitRow(idx, -i, false, false, "", true, pbVetoMask)
 
-            // Emit the event bar (rel=0) with correct flags/reason/mask
-            l2_emitRow(curIdxPB, 0, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
-
+            // Emit decision bar as rel=0 (this is the PB decision time row)
+            l2_emitRow(curIdxPB, 0, false, false, "", true, pbVetoMask)
 
 // ==============================
 // PBDBG: log PB candidates (EXEC + optional BLOCK) to Pine Logs
@@ -3475,8 +3428,6 @@ if barstate.isconfirmed and bullAddEnter
                     int idx = curIdxA - i
                     l2_emitRow(idx, -i, false, false, "", false, 0)
 
-                // Emit the event bar (rel=0) with correct flags/reason/mask
-                l2_emitRow(curIdxA, 0, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
 
 if rangeAEnter
     strategy.entry("LONG", strategy.long, comment="RANGE_A")
@@ -3561,8 +3512,6 @@ if entered and exportL2 and barstate.isconfirmed
                 int idx = curIdx - i
                 l2_emitRow(idx, -i, false, false, "", false, 0)
 
-            // Emit the event bar (rel=0) with correct flags/reason/mask
-            l2_emitRow(curIdx, 0, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
 
 
     // Initialize ADD reference on fresh Bull entries
@@ -3722,8 +3671,6 @@ if exportL2 and barstate.isconfirmed and (not inPos)
                     int idx = curIdx - i
                     l2_emitRow(idx, -i, false, false, "", false, 0)
 
-                // Emit the event bar (rel=0) with correct flags/reason/mask
-                l2_emitRow(curIdx, 0, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
 
 //====================================================
 // L1 max-fav/max-adv tracking (bar index + price)
@@ -4039,7 +3986,7 @@ if exitOk and inPos
         exitReason := "BEAR_TP0_NOEXT" 
         exitReg := "BEAR"
     // 3b) Other BEAR invalidations
-    if (not doExit) and bearShortInvalid
+    if (not doExit) and bearShortInvalid 
         doExit := true 
         exitReason := "BEAR_INV" 
         exitReg := "BEAR"
@@ -4147,8 +4094,8 @@ if exportL2 and barstate.isconfirmed and doExit
                 int idx = curIdx - i
                 l2_emitRow(idx, -i, false, false, "", false, 0)
 
-            // Emit the event bar (rel=0) with correct flags/reason/mask
-            l2_emitRow(curIdx, 0, L2_isEntryEvt, L2_isExitEvt, L2_exitReason, L2_isCandEvt, L2_blockedMask)
+
+
 
 // Apply deferred resets once we are actually flat
 if pendingReset and (not inPos)
@@ -4582,19 +4529,13 @@ if exitOk and inPos
                 bool emaReclaimHit = bearExitUseEmaReclaim and (close > emaFast)
                 bool reclaimNow = reclaimLvlHit or emaReclaimHit
 
-                // Level-only counter (truthful for logs): counts consecutive closes above bearReclLvl ONLY
-                bearReclaimCloseCnt := reclaimLvlHit ? (nz(bearReclaimCloseCnt[1]) + 1) : 0
+                bearReclaimCloseCnt := reclaimNow ? (nz(bearReclaimCloseCnt[1]) + 1) : 0
 
-                // Exit counter (preserves current behavior): counts consecutive closes above (bearReclLvl OR emaFast)
-                bearReclaimAnyCloseCnt := reclaimNow ? (nz(bearReclaimAnyCloseCnt[1]) + 1) : 0
-
-                if bearReclaimAnyCloseCnt >= bearExitReclaimBars
-                    //exitReason := "BEAR_RECLAIM_EXIT"
+                if bearReclaimCloseCnt >= bearExitReclaimBars
                     strategy.close("SHORT", comment="BEAR_RECLAIM_EXIT")
                     lastBearShortExitBar := bar_index
             else
                 bearReclaimCloseCnt := 0
-                bearReclaimAnyCloseCnt := 0
 
         closeShortAll("HTF-BULL-KILL")
         // temp tuple unpack
@@ -5118,7 +5059,7 @@ if doRegimeLabels and regimeFlip
 
 
 //====================================================
-// Mode label (last bar only) — observability 
+// Mode label (last bar only) — observability
 //====================================================
 var label modeLbl = na
 var int modeLblLastBar = na
