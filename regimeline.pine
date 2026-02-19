@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.05 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.06 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -606,6 +606,8 @@ bearVetoMaskNow += (htfOnNow) ? 4 : 0
 bearVetoMaskNow += (not (pendingBear or bearActive)) ? 8 : 0
 
 var int bearReclaimCloseCnt = 0
+// Counts "any reclaim" used for BEAR_RECLAIM_EXIT (level reclaim OR EMA reclaim)
+var int bearReclaimAnyCloseCnt = 0
 var int   lastRBShortExitBar = na
 
 // ---- RB SHORT execution latch (Commit S2)
@@ -4570,13 +4572,18 @@ if exitOk and inPos
                 bool emaReclaimHit = bearExitUseEmaReclaim and (close > emaFast)
                 bool reclaimNow = reclaimLvlHit or emaReclaimHit
 
-                bearReclaimCloseCnt := reclaimNow ? (nz(bearReclaimCloseCnt[1]) + 1) : 0
+                // Level-only counter (truthful for logs): counts consecutive closes above bearReclLvl ONLY
+                bearReclaimCloseCnt := reclaimLvlHit ? (nz(bearReclaimCloseCnt[1]) + 1) : 0
 
-                if bearReclaimCloseCnt >= bearExitReclaimBars
+                // Exit counter (preserves current behavior): counts consecutive closes above (bearReclLvl OR emaFast)
+                bearReclaimAnyCloseCnt := reclaimNow ? (nz(bearReclaimAnyCloseCnt[1]) + 1) : 0
+
+                if bearReclaimAnyCloseCnt >= bearExitReclaimBars
                     strategy.close("SHORT", comment="BEAR_RECLAIM_EXIT")
                     lastBearShortExitBar := bar_index
             else
                 bearReclaimCloseCnt := 0
+                bearReclaimAnyCloseCnt := 0
 
         closeShortAll("HTF-BULL-KILL")
         // temp tuple unpack
