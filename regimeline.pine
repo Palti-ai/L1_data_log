@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.04 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.05 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -2639,7 +2639,7 @@ if exportL2 and not l2HeaderDone and barstate.isconfirmed
          "isEntry,isExit,exitReason,isCand,blkMask,posTag,posState," +
          "pbAgeBars,pbImpAgeBars,pbFreshLateOk,pbFreshVeto,pbEnterExec,pbVetoMask," +
          "pbExpAgeBars,pbExpAgeVeto,pbLateVeto,pbLifecycleVeto,pbAgeVeto,pbFreshMinAge,pbMajorImpulseNow,pbLastMajorImpulseBar," +
-         "bearReclLvl,bearInvNeed2Cl,bearReclaimCnt,bearTP0Done,bearTP1Done,bearBarsIn,bearMFEpct,bearMAEpct,bearReclAbove"
+         "bearReclLvl,bearInvNeed2Cl,bearReclaimCnt,bearTP0Done,bearTP1Done,bearBarsIn,bearMFEpct,bearMAEpct,bearReclAbove,bearReclAbovePrev"
     )
 
 
@@ -2665,6 +2665,7 @@ l2_emitRow(_idx, _rel, _isEntry, _isExit, _exitReason, _isCand, _blkMask) =>
     float l2_bearMFEpct = (inPos and (posTag == "BEAR") and strategy.position_avg_price > 0) ? 100.0 * (strategy.position_avg_price - tradeLo) / strategy.position_avg_price : na
     float l2_bearMAEpct = (inPos and (posTag == "BEAR") and strategy.position_avg_price > 0) ? 100.0 * (tradeHi - strategy.position_avg_price) / strategy.position_avg_price : na
     int l2_bearReclAbove = (not na(bearReclLvl) and close > bearReclLvl) ? 1 : 0
+    int l2_bearReclAbovePrev = (not na(bearReclLvl) and close[1] > bearReclLvl) ? 1 : 0
     // PBDEC fields (only populated for PB decision events; blank otherwise)
     bool isPBDec = str.startswith(evtType, "PBDEC_")
     string pbAgeS      = isPBDec ? str.tostring(L2_pbAgeBars) : ""
@@ -2759,7 +2760,8 @@ l2_emitRow(_idx, _rel, _isEntry, _isExit, _exitReason, _isCand, _blkMask) =>
       str.tostring(l2_bearBarsIn) + "," + 
       str.tostring(l2_bearMFEpct) + "," + 
       str.tostring(l2_bearMAEpct)+ "," + 
-      str.tostring(l2_bearReclAbove)
+      str.tostring(l2_bearReclAbove) + "," + 
+      str.tostring(l2_bearReclAbovePrev)
     )
 
 
