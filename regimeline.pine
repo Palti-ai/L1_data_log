@@ -4029,7 +4029,7 @@ if exitOk and inPos
         exitReason := "BEAR_TP0_NOEXT" 
         exitReg := "BEAR"
     // 3b) Other BEAR invalidations
-    if (not doExit) and bearShortInvalid and exitReason != "BEAR_RECLAIM_EXIT" 
+    if (not doExit) and bearShortInvalid
         doExit := true 
         exitReason := "BEAR_INV" 
         exitReg := "BEAR"
