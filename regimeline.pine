@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.07 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.08 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -942,7 +942,7 @@ if exportToLogs and barstate.isfirst
       "pbAdxSlopeEnt,pbAgeBarsEnt,pbNoNewHiStreakEnt,pbDepthAtrEnt,pbExpAgeBarsEnt,pbTouchOkEnt,pbHHProofOkEnt," +
       "bearPendingEnt,bearActiveEnt,bearBreakLvlEnt,bearReclLvlEnt,bearReclaimCntEnt,bearPBSeenEnt,bearPBBarEnt,lastBearExitBarEnt," +
       "bearShortADXOkEnt,bearCloseNearLowEnt,bearAdxSlopeEnt,bearHtfOnEnt,bearHtfFlipEnt,bearAllowMaskEnt,bearVetoMaskEnt" +
-      "bearReclLvl,bearInvNeed2Cl,bearReclaimCnt,bearTP0Done,bearTP1Done,bearFailState,bearBarsIn,bearMFEpct,bearMAEpct,bearReclLvlEff"
+      "bearReclLvl,bearInvNeed2Cl,bearReclaimCnt,bearTP0Done,bearTP1Done,bearFailState,bearBarsIn,bearMFEpct,bearMAEpct,bearReclLvlEff,bearEnterOk,pendingBear,bearShortADXOk,htfBearOk,bearNoChaseOk"
       )
 
 
@@ -2668,6 +2668,11 @@ l2_emitRow(_idx, _rel, _isEntry, _isExit, _exitReason, _isCand, _blkMask) =>
     float l2_bearMAEpct = (inPos and (posTag == "BEAR") and strategy.position_avg_price > 0) ? 100.0 * (tradeHi - strategy.position_avg_price) / strategy.position_avg_price : na
     int l2_bearReclAbove = (not na(bearReclLvl) and close > bearReclLvl) ? 1 : 0
     int l2_bearReclAbovePrev = (not na(bearReclLvl) and close[1] > bearReclLvl) ? 1 : 0
+    int l2_bearEnterOk     = bearShortEnter ? 1 : 0
+    int l2_pendingBear     = pendingBear ? 1 : 0
+    int l2_bearShortADXOk  = bearShortADXOk ? 1 : 0
+    int l2_htfBearOk       = htfBearOk ? 1 : 0
+    int l2_bearNoChaseOk   = bearNoChaseOk ? 1 : 0
     // PBDEC fields (only populated for PB decision events; blank otherwise)
     bool isPBDec = str.startswith(evtType, "PBDEC_")
     string pbAgeS      = isPBDec ? str.tostring(L2_pbAgeBars) : ""
@@ -2763,7 +2768,12 @@ l2_emitRow(_idx, _rel, _isEntry, _isExit, _exitReason, _isCand, _blkMask) =>
       str.tostring(l2_bearMFEpct) + "," + 
       str.tostring(l2_bearMAEpct)+ "," + 
       str.tostring(l2_bearReclAbove) + "," + 
-      str.tostring(l2_bearReclAbovePrev)
+      str.tostring(l2_bearReclAbovePrev) + "," + 
+      str.tostring(l2_bearEnterOk) + "," + 
+      str.tostring(l2_pendingBear) + "," + 
+      str.tostring(l2_bearShortADXOk) + "," + 
+      str.tostring(l2_htfBearOk) + "," + 
+      str.tostring(l2_bearNoChaseOk)
     )
 
 
@@ -4579,7 +4589,7 @@ if exitOk and inPos
                 bearReclaimAnyCloseCnt := reclaimNow ? (nz(bearReclaimAnyCloseCnt[1]) + 1) : 0
 
                 if bearReclaimAnyCloseCnt >= bearExitReclaimBars
-                    exitReason := "BEAR_RECLAIM_EXIT"
+                    //exitReason := "BEAR_RECLAIM_EXIT"
                     strategy.close("SHORT", comment="BEAR_RECLAIM_EXIT")
                     lastBearShortExitBar := bar_index
             else
