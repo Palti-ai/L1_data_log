@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.02 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.03 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -1390,29 +1390,14 @@ if bearPendingCancel
 // If a BEAR short is open, reclaim must HARD-EXIT the short BEFORE clearing bearReclLvl.
 // Otherwise bearReclLvl becomes na and the short can drift "naked" into a huge loss.
 
-bearReclaimRaw  = bearActive and not na(bearReclLvl) and (close > bearReclLvl) and (not bearNeed2Cl or close[1] > bearReclLvl)
-bearReclaimOk   = bearReclaimRaw
-bearReclaimExit = bearReclaimRaw and inPos and (posTag == "BEAR")
+// --- Bear reclaim handling ---
+// IMPORTANT: Do NOT wipe bearReclLvl while a BEAR short is open.
+// bearInvPre uses: inPos && posTag=="BEAR" && not na(bearReclLvl) && close > bearReclLvl
+// If bearReclLvl is set to na on reclaim, the BEAR invalidation can never fire and the short can drift into a huge loss.
 
-// 1) Reclaim while BEAR short is open => immediate close (close-based truth)
-if bearReclaimExit and barstate.isconfirmed
-    // Close both possible short entry-ids used by this script (NO helper call needed here).
-    strategy.close("SHORT",    comment="BEAR_RECLAIM_EXIT")
-    strategy.close("RB_SHORT", comment="BEAR_RECLAIM_EXIT")
-    lastBearShortExitBar := bar_index
+bearReclaimOk = bearActive and not na(bearReclLvl) and (close > bearReclLvl) and (not bearNeed2Cl or close[1] > bearReclLvl)
 
-// 2) Clear Bear overlay/state:
-//    - when flat, OR
-//    - when reclaim happened but position is not a BEAR short, OR
-//    - when we just emitted the reclaim exit for an open BEAR short
-bearReclaimClear =
-     bearReclaimRaw and (
-        (not inPos) or
-        (posTag != "BEAR") or
-        (bearReclaimExit and barstate.isconfirmed)
-     )
-
-if bearReclaimClear
+if bearReclaimOk
     // ---- stamp END before wiping levels ----
     bearEndBar := bar_index
     bearEndY   := low - lblPadDown
@@ -1420,8 +1405,9 @@ if bearReclaimClear
     bearActive   := false
     bearBreakLvl := na
 
-    // CRITICAL: never wipe bearReclLvl while a BEAR short is still open (prevents "naked short").
-    bearReclLvl := (inPos and posTag == "BEAR" and not (bearReclaimExit and barstate.isconfirmed)) ? bearReclLvl : na
+    // CRITICAL FIX (5-line class):
+    // keep bearReclLvl if a BEAR short is open; otherwise clear it as before.
+    bearReclLvl := (inPos and (posTag == "BEAR")) ? bearReclLvl : na
 
     bearAcceptedBar := na
     bearRenewBar    := na
