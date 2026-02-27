@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.03 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.04 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -4539,15 +4539,24 @@ if exitOk and inPos
         // --- Bear: pre-HTF kill exit on LTF reclaim (close-based) ---
         if barstate.isconfirmed
             if isShort and (logModeNow() == "BEAR") and bearExitUseReclaim
-                bool reclaimLvlHit = (not na(bearReclLvl)) and (close > bearReclLvl)
-                bool emaReclaimHit = bearExitUseEmaReclaim and (close > emaFast)
-                bool reclaimNow = reclaimLvlHit or emaReclaimHit
+                // LOSS-ONLY immediate kill: prevents catastrophic BEAR_RECLAIM_EXIT losers.
+                // Winners (in profit) keep the existing reclaim-bars logic unchanged.
+                bool bearIsLosingNow = close > strategy.position_avg_price
 
-                bearReclaimCloseCnt := reclaimNow ? (nz(bearReclaimCloseCnt[1]) + 1) : 0
-
-                if bearReclaimCloseCnt >= bearExitReclaimBars
+                if bearIsLosingNow
+                    bearReclaimCloseCnt := 0
                     strategy.close("SHORT", comment="BEAR_RECLAIM_EXIT")
                     lastBearShortExitBar := bar_index
+                else
+                    bool reclaimLvlHit = (not na(bearReclLvl)) and (close > bearReclLvl)
+                    bool emaReclaimHit = bearExitUseEmaReclaim and (close > emaFast)
+                    bool reclaimNow = reclaimLvlHit or emaReclaimHit
+
+                    bearReclaimCloseCnt := reclaimNow ? (nz(bearReclaimCloseCnt[1]) + 1) : 0
+
+                    if bearReclaimCloseCnt >= bearExitReclaimBars
+                        strategy.close("SHORT", comment="BEAR_RECLAIM_EXIT")
+                        lastBearShortExitBar := bar_index
             else
                 bearReclaimCloseCnt := 0
 
