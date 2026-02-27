@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.04 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.01 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -1386,33 +1386,19 @@ if bearPendingCancel
 
 
 
-// --- Bear reclaim handling ---
-// If a BEAR short is open, reclaim must HARD-EXIT the short BEFORE clearing bearReclLvl.
-// Otherwise bearReclLvl becomes na and the short can drift "naked" into a huge loss.
-
-// --- Bear reclaim handling ---
-// IMPORTANT: Do NOT wipe bearReclLvl while a BEAR short is open.
-// bearInvPre uses: inPos && posTag=="BEAR" && not na(bearReclLvl) && close > bearReclLvl
-// If bearReclLvl is set to na on reclaim, the BEAR invalidation can never fire and the short can drift into a huge loss.
-
 bearReclaimOk = bearActive and not na(bearReclLvl) and (close > bearReclLvl) and (not bearNeed2Cl or close[1] > bearReclLvl)
-
 if bearReclaimOk
     // ---- stamp END before wiping levels ----
     bearEndBar := bar_index
     bearEndY   := low - lblPadDown
-
-    bearActive   := false
-    bearBreakLvl := na
-
-    // CRITICAL FIX (5-line class):
-    // keep bearReclLvl if a BEAR short is open; otherwise clear it as before.
-    bearReclLvl := (inPos and (posTag == "BEAR")) ? bearReclLvl : na
-
+    bearActive      := false
+    bearBreakLvl    := na
+    bearReclLvl     := na
     bearAcceptedBar := na
     bearRenewBar    := na
-    bearPBSeen      := false
-    bearPBBar       := na
+    bearPBSeen := false
+    bearPBBar  := na
+
 
 
 bearLockoutOk = (bearLockoutBars <= 0) or na(bearAcceptedBar) or ((bar_index - bearAcceptedBar) >= bearLockoutBars)
@@ -4539,24 +4525,15 @@ if exitOk and inPos
         // --- Bear: pre-HTF kill exit on LTF reclaim (close-based) ---
         if barstate.isconfirmed
             if isShort and (logModeNow() == "BEAR") and bearExitUseReclaim
-                // LOSS-ONLY immediate kill: prevents catastrophic BEAR_RECLAIM_EXIT losers.
-                // Winners (in profit) keep the existing reclaim-bars logic unchanged.
-                bool bearIsLosingNow = close > strategy.position_avg_price
+                bool reclaimLvlHit = (not na(bearReclLvl)) and (close > bearReclLvl)
+                bool emaReclaimHit = bearExitUseEmaReclaim and (close > emaFast)
+                bool reclaimNow = reclaimLvlHit or emaReclaimHit
 
-                if bearIsLosingNow
-                    bearReclaimCloseCnt := 0
+                bearReclaimCloseCnt := reclaimNow ? (nz(bearReclaimCloseCnt[1]) + 1) : 0
+
+                if bearReclaimCloseCnt >= bearExitReclaimBars
                     strategy.close("SHORT", comment="BEAR_RECLAIM_EXIT")
                     lastBearShortExitBar := bar_index
-                else
-                    bool reclaimLvlHit = (not na(bearReclLvl)) and (close > bearReclLvl)
-                    bool emaReclaimHit = bearExitUseEmaReclaim and (close > emaFast)
-                    bool reclaimNow = reclaimLvlHit or emaReclaimHit
-
-                    bearReclaimCloseCnt := reclaimNow ? (nz(bearReclaimCloseCnt[1]) + 1) : 0
-
-                    if bearReclaimCloseCnt >= bearExitReclaimBars
-                        strategy.close("SHORT", comment="BEAR_RECLAIM_EXIT")
-                        lastBearShortExitBar := bar_index
             else
                 bearReclaimCloseCnt := 0
 
