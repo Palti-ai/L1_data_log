@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.01 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.02 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -253,10 +253,7 @@ bearAcceptEntryOn = input.bool(true, "Bear: allow entry on acceptance-down (no r
 bearExitUseReclaim = input.bool(true,  "Bear short: exit on LTF reclaim (pre HTF-BULL-KILL)", group=grpBear)
 bearExitReclaimBars = input.int(2,     "Bear short: reclaim closes needed",                  group=grpBear, minval=1)
 bearExitUseEmaReclaim = input.bool(true, "Bear short: EMAfast reclaim counts as reclaim",    group=grpBear)
-bearProofOn        = input.bool(true,  "BEAR: Early Proof Window (exit if no early follow-through)", group=grpBear)
-bearProofBarsW     = input.int(3,      "BEAR: Proof window W (bars after entry)", group=grpBear, minval=1, maxval=20)
-bearProofMinExtE   = input.float(0.25, "BEAR: Min favorable extension E (mfePct units)", group=grpBear, step=0.05, minval=0.0, maxval=10.0)
-bearProofNeedRed   = input.bool(true,  "BEAR: Proof fail exits only if trade is losing at evaluation", group=grpBear)
+
 bearPB_MaxPop_ATR  = input.float(0.60, "Bear SHORT: retest max pop above bearBreakLvl (ATR*x)", group=grpBear, step=0.05)
 bearLvlHold_ATR    = input.float(0.10, "Bear SHORT: close hold allowance above bearBreakLvl (ATR*x)", group=grpBear, step=0.05)
 
@@ -610,9 +607,6 @@ bearVetoMaskNow += (not (pendingBear or bearActive)) ? 8 : 0
 
 var int bearReclaimCloseCnt = 0
 var int   lastRBShortExitBar = na
-var int  bearProofBars    = 0
-var bool bearProofDone    = false
-var bool bearProofPass    = false
 
 // ---- RB SHORT execution latch (Commit S2)
 var bool rbSPBSeen = false
@@ -1392,19 +1386,47 @@ if bearPendingCancel
 
 
 
-bearReclaimOk = bearActive and not na(bearReclLvl) and (close > bearReclLvl) and (not bearNeed2Cl or close[1] > bearReclLvl)
-if bearReclaimOk
+// --- Bear reclaim handling ---
+// If a BEAR short is open, reclaim must HARD-EXIT the short BEFORE clearing bearReclLvl.
+// Otherwise bearReclLvl becomes na and the short can drift "naked" into a huge loss.
+
+bearReclaimRaw  = bearActive and not na(bearReclLvl) and (close > bearReclLvl) and (not bearNeed2Cl or close[1] > bearReclLvl)
+bearReclaimOk   = bearReclaimRaw
+bearReclaimExit = bearReclaimRaw and inPos and (posTag == "BEAR")
+
+// 1) Reclaim while BEAR short is open => immediate close (close-based truth)
+if bearReclaimExit and barstate.isconfirmed
+    // Close both possible short entry-ids used by this script (NO helper call needed here).
+    strategy.close("SHORT",    comment="BEAR_RECLAIM_EXIT")
+    strategy.close("RB_SHORT", comment="BEAR_RECLAIM_EXIT")
+    lastBearShortExitBar := bar_index
+
+// 2) Clear Bear overlay/state:
+//    - when flat, OR
+//    - when reclaim happened but position is not a BEAR short, OR
+//    - when we just emitted the reclaim exit for an open BEAR short
+bearReclaimClear =
+     bearReclaimRaw and (
+        (not inPos) or
+        (posTag != "BEAR") or
+        (bearReclaimExit and barstate.isconfirmed)
+     )
+
+if bearReclaimClear
     // ---- stamp END before wiping levels ----
     bearEndBar := bar_index
     bearEndY   := low - lblPadDown
-    bearActive      := false
-    bearBreakLvl    := na
-    bearReclLvl     := na
+
+    bearActive   := false
+    bearBreakLvl := na
+
+    // CRITICAL: never wipe bearReclLvl while a BEAR short is still open (prevents "naked short").
+    bearReclLvl := (inPos and posTag == "BEAR" and not (bearReclaimExit and barstate.isconfirmed)) ? bearReclLvl : na
+
     bearAcceptedBar := na
     bearRenewBar    := na
-    bearPBSeen := false
-    bearPBBar  := na
-
+    bearPBSeen      := false
+    bearPBBar       := na
 
 
 bearLockoutOk = (bearLockoutBars <= 0) or na(bearAcceptedBar) or ((bar_index - bearAcceptedBar) >= bearLockoutBars)
@@ -4542,9 +4564,6 @@ if exitOk and inPos
                     lastBearShortExitBar := bar_index
             else
                 bearReclaimCloseCnt := 0
-                bearProofBars := 0
-                bearProofDone := false
-                bearProofPass := false
 
         closeShortAll("HTF-BULL-KILL")
         // temp tuple unpack
