@@ -285,10 +285,18 @@ bearPB_CloseUnder_ATR = input.float(0.05, "Bear SHORT: retest close must be UNDE
 
 // === BEAR_S_ACCEPT Immediate Reversal Cut (loss-only, early window) ===
 bearAccCut_On        = input.bool(true,  "BEAR Accept: Early Reversal Cut ON", group="Bear")
-bearAccCut_Window    = input.int(3,      "BEAR Accept: Cut Window (bars)", minval=1, maxval=12, group="Bear")
-bearAccCut_LossATR   = input.float(0.90, "BEAR Accept: Cut if Loss ≥ ATR", step=0.05, group="Bear")
-bearAccCut_ReclaimATR= input.float(0.20, "BEAR Accept: Reclaim EMAfast + ATR", step=0.05, group="Bear")
-bearAccCut_CloseLoc  = input.float(0.60, "BEAR Accept: Cut if CloseLoc ≥", step=0.05, group="Bear")
+bearAccCut_Window     = input.int(8,      "BEAR Accept: Cut Window (bars)", minval=1, maxval=12, group="Bear")
+bearAccCut_LossATR    = input.float(0.60, "BEAR Accept: Cut if Loss ≥ ATR", step=0.05, group="Bear")
+bearAccCut_ReclaimATR = input.float(0.00, "BEAR Accept: Reclaim EMAfast + ATR", step=0.05, group="Bear")
+bearAccCut_CloseLoc   = input.float(0.55, "BEAR Accept: Cut if CloseLoc ≥", step=0.05, group="Bear")
+
+// === BEAR_S_BREAKDOWN Early Reversal Cut (loss-only, HTF bull only) ===
+bearBdCut_On         = input.bool(true,  "BEAR Breakdown: Early Reversal Cut ON", group="Bear")
+bearBdCut_Window     = input.int(6,      "BEAR Breakdown: Cut Window (bars)", minval=1, maxval=20, group="Bear")
+bearBdCut_LossATR    = input.float(0.70, "BEAR Breakdown: Cut if Loss ≥ ATR", step=0.05, group="Bear")
+bearBdCut_ReclaimATR = input.float(0.10, "BEAR Breakdown: Reclaim EMAfast + ATR", step=0.05, group="Bear")
+bearBdCut_CloseLoc   = input.float(0.58, "BEAR Breakdown: Cut if CloseLoc ≥", step=0.05, group="Bear")
+bearBdCut_OnlyHTFBull= input.bool(true,  "BEAR Breakdown: Only when HTF bull & not neutral", group="Bear") 
 
 rbUseSnapshotAccept = input.bool(true, "RB attempt acceptance uses snapshot (strict)", group=grpRB)
 
@@ -4018,6 +4026,7 @@ rbFlatTimeStop = (not inPos) and (rbAttempt or rbPending or rbActive) and not na
 bearAccCut_Active =
      bearAccCut_On and inPos and isShort and (posTag == "BEAR") and
      (bearEntryArchA == 1) and
+     htfTrendOk and (not htfNeutral) and
      (not na(bearEntryBar)) and (bar_index - bearEntryBar <= bearAccCut_Window)
 
 bearAccCut_LosingNow = (not na(bearEntryClose)) and (close > bearEntryClose + (atr * bearAccCut_LossATR))
@@ -4028,6 +4037,24 @@ bearAccCut_ReclaimNow =
 
 bearAccEarlyCut = barstate.isconfirmed and bearAccCut_Active and bearAccCut_LosingNow and bearAccCut_ReclaimNow
 
+//====================================================
+// BEAR_S_BREAKDOWN early reversal cut (loss-only, windowed, HTF bull only)
+//====================================================
+bearBdCut_HtfOk = (not bearBdCut_OnlyHTFBull) or (htfTrendOk and (not htfNeutral))
+
+bearBdCut_Active =
+     bearBdCut_On and inPos and isShort and (posTag == "BEAR") and
+     (bearEntryArchA == 0) and
+     bearBdCut_HtfOk and
+     (not na(bearEntryBar)) and (bar_index - bearEntryBar <= bearBdCut_Window)
+
+bearBdCut_LosingNow =
+     (not na(bearEntryClose)) and (close > bearEntryClose + (atr * bearBdCut_LossATR))
+
+bearBdCut_ReclaimNow =
+     (close > emaFast + (atr * bearBdCut_ReclaimATR)) and (closeLoc >= bearBdCut_CloseLoc)
+
+bearBdEarlyCut = barstate.isconfirmed and bearBdCut_Active and bearBdCut_LosingNow and bearBdCut_ReclaimNow
 //====================================================
 // EXIT EXECUTION + L1/L2 latching (NO close_all)
 //====================================================
@@ -4062,7 +4089,12 @@ if exitOk and inPos
         doExit := true
         exitReason := "BEAR_ACC_EARLY_CUT"
         exitReg := "BEAR"
-    // 3b) BEAR trail exit (post-TP1 trail reclaim)
+    // 3b) BEAR Breakdown early reversal cut (loss-only, first N bars, HTF bull only)
+    if (not doExit) and bearBdEarlyCut
+        doExit := true
+        exitReason := "BEAR_BD_EARLY_CUT"
+        exitReg := "BEAR"
+    // 3c) BEAR trail exit (post-TP1 trail reclaim)
     if (not doExit) and bearInvPostTrail
         doExit := true
         exitReason := "BEAR_TRAIL"
