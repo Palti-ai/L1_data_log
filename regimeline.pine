@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.03 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.04 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -282,7 +282,7 @@ bearTrailBuf_ATR  = input.float(0.25, "Bear post-TP1: EMA trail buffer (ATR*x)",
 bearInvNeed2Cl     = input.bool(true, "Bear SHORT invalidation: require 2 closes above bearReclLvl", group=grpBear)
 bearAdxMin        = input.float(20, "Bear SHORT: require ADX >=", group=grpBear, step=0.5)
 bearPB_CloseUnder_ATR = input.float(0.05, "Bear SHORT: retest close must be UNDER breakLvl by ATR*x", group=grpBear, step=0.01)
-
+bearBreakNoChase_RngAtrMax = input.float(1.65, "BEAR Breakdown: No-Chase Range/ATR Max", step=0.05, group="Bear")
 rbUseSnapshotAccept = input.bool(true, "RB attempt acceptance uses snapshot (strict)", group=grpRB)
 
 grpTS="Time-stop downgrades"
@@ -325,15 +325,11 @@ l2OverlapN   = input.int(8,  "L2 overlap N", group=grpLogs, minval=2, maxval=50)
 l2RangeN     = input.int(20, "L2 range width N", group=grpLogs, minval=5, maxval=200)
 l2VolN       = input.int(20, "L2 volatility baseline N", group=grpLogs, minval=5, maxval=200)
 
-
-
-
 grpDiag="Diagnostics"
 showDiagHUD = input.bool(true, "Show ADX Diagnostics HUD", group=grpDiag)
 showBlockLabels = input.bool(false, "Show labels ONLY when entry is blocked", group=grpDiag)
 dbgPBProbe = input.bool(false, "DBG: PBDBG to Logs (PB candidates)", group=grpDiag)
 dbgPBProbeIncludeBlocked = input.bool(true, "DBG: PBDBG include BLOCKED candidates", group=grpDiag)
-
 
 //====================================================
 // Precompute
@@ -2854,6 +2850,7 @@ bearShortEnter =
          barstate.isconfirmed and (not inPos) and bearShortBreakdownNow and
          bearLocalDowntrendOk and (close < emaFast) and
          bearLockoutOk and bearReentryOk and shortCooldownOk and
+         (na(bearRangeAtrLocal) or bearRangeAtrLocal < bearBreakNoChase_RngAtrMax) and
          (
              bearAllowContinuation or
              (not bearKillUseHTFveto or htfOffForRA)
