@@ -4012,19 +4012,22 @@ rbFlatTimeStop = (not inPos) and (rbAttempt or rbPending or rbActive) and not na
 //====================================================
 // BEAR_S_ACCEPT early reversal cut (loss-only, windowed)
 //====================================================
+
+// Uses existing state lastEntryBar (already used for bearBarsIn in v7.04)
 bearAccCut_Active =
      bearAccCut_On and inPos and isShort and (posTag == "BEAR") and
-     (bearEntryArchA == 1) and
-     (not na(bearEntryBar)) and (bar_index - bearEntryBar <= bearAccCut_Window)
+     (not na(lastEntryBar)) and (bar_index - lastEntryBar <= bearAccCut_Window) and
+     (lastEntryReason == "BEAR_S_ACCEPT")
 
 bearAccCut_LosingNow =
-     (not na(bearEntryClose)) and (close > bearEntryClose + (atr * bearAccCut_LossATR))
+     close > strategy.position_avg_price + (atr * bearAccCut_LossATR)
 
 bearAccCut_ReclaimNow =
      (close > emaFast + (atr * bearAccCut_ReclaimATR)) and
      (closeLoc >= bearAccCut_CloseLoc)
 
 bearAccEarlyCut = barstate.isconfirmed and bearAccCut_Active and bearAccCut_LosingNow and bearAccCut_ReclaimNow
+
 //====================================================
 // EXIT EXECUTION + L1/L2 latching (NO close_all)
 //====================================================
