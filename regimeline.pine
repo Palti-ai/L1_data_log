@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.01 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.02 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -253,7 +253,9 @@ bearAcceptEntryOn = input.bool(true, "Bear: allow entry on acceptance-down (no r
 bearExitUseReclaim = input.bool(true,  "Bear short: exit on LTF reclaim (pre HTF-BULL-KILL)", group=grpBear)
 bearExitReclaimBars = input.int(2,     "Bear short: reclaim closes needed",                  group=grpBear, minval=1)
 bearExitUseEmaReclaim = input.bool(true, "Bear short: EMAfast reclaim counts as reclaim",    group=grpBear)
-
+// BEAR_S_ACCEPT liquidation-climax veto (blocks shorting the dump)
+bearAccClimax_RngAtrMin = input.float(1.80, "BEAR Accept Veto: Range/ATR ≥", step=0.05, group="Bear")
+bearAccClimax_BodyPctMin = input.float(0.65, "BEAR Accept Veto: BodyPct ≥", step=0.05, group="Bear")
 bearPB_MaxPop_ATR  = input.float(0.60, "Bear SHORT: retest max pop above bearBreakLvl (ATR*x)", group=grpBear, step=0.05)
 bearLvlHold_ATR    = input.float(0.10, "Bear SHORT: close hold allowance above bearBreakLvl (ATR*x)", group=grpBear, step=0.05)
 
@@ -1373,7 +1375,11 @@ if bearAcceptOk
 
 bearAcceptVetoLowAdx = (adx < 20)
 bearAcceptVetoWeakWickPrev = (not na(adx[1])) and (not na(bodyPct[1])) and (adx[1] < 20) and (bodyPct[1] < 0.12)
-bearAcceptImpulseEnter = barstate.isconfirmed and (not inPos) and bearShortOn and bearAcceptEntryOn and (bearActive and not na(bearAcceptedBar) and (bar_index == bearAcceptedBar)) and shortCooldownOk and bearShortADXOk and (adx >= bearShortADXMin) and (close < bearBreakLvl) and (close < open) and (bodyPct >= bearMinBodyPct) and bearCloseNearLowOk and (not bearAcceptVetoLowAdx)
+// Liquidation-climax tell: very large range relative to ATR + big real body.
+// Only used to veto BEAR_S_ACCEPT (accept-impulse) entries.
+bearRangeAtrLocal = (atr > 0) ? ((high - low) / atr) : na
+bearAccClimaxVeto = (not na(bearRangeAtrLocal)) and (bearRangeAtrLocal >= bearAccClimax_RngAtrMin) and (bodyPct >= bearAccClimax_BodyPctMin)
+bearAcceptImpulseEnter = barstate.isconfirmed and (not inPos) and bearShortOn and bearAcceptEntryOn and (bearActive and not na(bearAcceptedBar) and (bar_index == bearAcceptedBar)) and shortCooldownOk and bearShortADXOk and (adx >= bearShortADXMin) and (close < bearBreakLvl) and (close < open) and (bodyPct >= bearMinBodyPct) and bearCloseNearLowOk and (not bearAcceptVetoLowAdx) and (not bearAccClimaxVeto)
 
 // Cancel pendingBear if price reclaims above the reclaim level (close-based truth)
 bearPendingCancel = pendingBear and not na(bearReclLvl) and (close > bearReclLvl) and (not bearNeed2Cl or close[1] > bearReclLvl)
