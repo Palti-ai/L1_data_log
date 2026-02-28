@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.02 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.03 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -584,6 +584,11 @@ var int   bearStartBar = na
 var float bearStartY   = na
 var int   bearEndBar   = na
 var float bearEndY     = na
+
+// BEAR_S_ACCEPT climax-delay state (only used when acceptance candle is liquidation-like)
+var bool  bearAccClimaxPend   = false
+var int   bearAccClimaxBar    = na
+var float bearAccClimaxRefLow = na
 
 // ---- Bear SHORT execution latch (Commit S1)
 var bool  bearPBSeen    = false
@@ -1336,6 +1341,12 @@ if (not bearActive) and (not pendingBear) and bearBreakNow
     bearReclLvl  := (decLow + atr * bearBuf_ATR)
 
 bearAcceptOk = pendingBear and not na(bearBreakLvl) and (close < bearBreakLvl) and (not bearNeed2Cl or close[1] < bearBreakLvl)
+// Local liquidation / climax detection for BEAR_S_ACCEPT
+bearRangeAtrLocal = (atr > 0) ? ((high - low) / atr) : na
+bearAccClimaxVeto =
+     (not na(bearRangeAtrLocal)) and
+     (bearRangeAtrLocal >= bearAccClimax_RngAtrMin) and
+     (bodyPct >= bearAccClimax_BodyPctMin)
 if bearAcceptOk
     bearActive      := true
     pendingBear     := false
@@ -1361,7 +1372,6 @@ if bearAcceptOk
     bullArmRollHigh := na
     bullHHBar := na
 
-
     // Also clear Bull label anchors so they cannot print inside Bear
     bullStartBar := na
     bullStartY   := na
@@ -1373,14 +1383,48 @@ if bearAcceptOk
     //bearJustAccepted = bearActive and not na(bearAcceptedBar) and (bar_index == bearAcceptedBar)
     bearPBBar  := na
 
+    // If acceptance candle is liquidation-like, delay BEAR_S_ACCEPT by 1 bar and require follow-through
+    if bearAccClimaxVeto
+        bearAccClimaxPend   := true
+        bearAccClimaxBar    := bar_index
+        bearAccClimaxRefLow := low
+    else
+        bearAccClimaxPend   := false
+        bearAccClimaxBar    := na
+        bearAccClimaxRefLow := na
+
 bearAcceptVetoLowAdx = (adx < 20)
 bearAcceptVetoWeakWickPrev = (not na(adx[1])) and (not na(bodyPct[1])) and (adx[1] < 20) and (bodyPct[1] < 0.12)
 // Liquidation-climax tell: very large range relative to ATR + big real body.
 // Only used to veto BEAR_S_ACCEPT (accept-impulse) entries.
-bearRangeAtrLocal = (atr > 0) ? ((high - low) / atr) : na
-bearAccClimaxVeto = (not na(bearRangeAtrLocal)) and (bearRangeAtrLocal >= bearAccClimax_RngAtrMin) and (bodyPct >= bearAccClimax_BodyPctMin)
-bearAcceptImpulseEnter = barstate.isconfirmed and (not inPos) and bearShortOn and bearAcceptEntryOn and (bearActive and not na(bearAcceptedBar) and (bar_index == bearAcceptedBar)) and shortCooldownOk and bearShortADXOk and (adx >= bearShortADXMin) and (close < bearBreakLvl) and (close < open) and (bodyPct >= bearMinBodyPct) and bearCloseNearLowOk and (not bearAcceptVetoLowAdx) and (not bearAccClimaxVeto)
+bearAccClimaxFollowThroughOk =
+     bearAccClimaxPend and not na(bearAccClimaxBar) and (bar_index == bearAccClimaxBar + 1) and
+     (low < bearAccClimaxRefLow)
+bearAcceptImpulseBase =
+     barstate.isconfirmed and (not inPos) and bearShortOn and bearAcceptEntryOn and
+     shortCooldownOk and bearShortADXOk and (adx >= bearShortADXMin) and
+     (close < bearBreakLvl) and (close < open) and
+     (bodyPct >= bearMinBodyPct) and bearCloseNearLowOk and
+     (not bearAcceptVetoLowAdx)
+bearAcceptImpulseEnter =
+     bearAcceptImpulseBase and (
+        // normal: enter on acceptance bar
+        ((bearActive and not na(bearAcceptedBar) and (bar_index == bearAcceptedBar)) and (not bearAccClimaxPend)) or
+        // climax: enter only on next bar IF follow-through prints
+        bearAccClimaxFollowThroughOk
+     )
 
+// Disarm climax pending after its one-bar confirmation window
+if bearAccClimaxPend and not na(bearAccClimaxBar) and (bar_index > bearAccClimaxBar + 1)
+    bearAccClimaxPend   := false
+    bearAccClimaxBar    := na
+    bearAccClimaxRefLow := na
+
+// Disarm immediately if we took the climax follow-through entry
+if bearAccClimaxFollowThroughOk
+    bearAccClimaxPend   := false
+    bearAccClimaxBar    := na
+    bearAccClimaxRefLow := na
 // Cancel pendingBear if price reclaims above the reclaim level (close-based truth)
 bearPendingCancel = pendingBear and not na(bearReclLvl) and (close > bearReclLvl) and (not bearNeed2Cl or close[1] > bearReclLvl)
 if bearPendingCancel
@@ -1389,8 +1433,6 @@ if bearPendingCancel
     bearReclLvl  := na
     bearPBSeen := false
     bearPBBar  := na
-
-
 
 bearReclaimOk = bearActive and not na(bearReclLvl) and (close > bearReclLvl) and (not bearNeed2Cl or close[1] > bearReclLvl)
 if bearReclaimOk
