@@ -2884,6 +2884,7 @@ if bearShortEnter
     L1_pendDir  := "SHORT"
     L1_pendReg  := "BEAR"
     L1_pendArch := bearAcceptImpulseEnter ? "BEAR_S_ACCEPT" : "BEAR_S_BREAKDOWN"
+    lastEntryReason := L1_pendArch
 
     L1_pendEntryEngine  := "BEAR_ENTRY"
     L1_pendHtfState     := htfOnNow ? "HTF_ON" : "HTF_OFF"
@@ -4016,11 +4017,10 @@ rbFlatTimeStop = (not inPos) and (rbAttempt or rbPending or rbActive) and not na
 // Uses existing state lastEntryBar (already used for bearBarsIn in v7.04)
 bearAccCut_Active =
      bearAccCut_On and inPos and isShort and (posTag == "BEAR") and
-     (not na(lastEntryBar)) and (bar_index - lastEntryBar <= bearAccCut_Window) and
-     (lastEntryReason == "BEAR_S_ACCEPT")
+     (bearEntryArchA == 1) and
+     (not na(bearEntryBar)) and (bar_index - bearEntryBar <= bearAccCut_Window)
 
-bearAccCut_LosingNow =
-     close > strategy.position_avg_price + (atr * bearAccCut_LossATR)
+bearAccCut_LosingNow = (not na(bearEntryClose)) and (close > bearEntryClose + (atr * bearAccCut_LossATR))
 
 bearAccCut_ReclaimNow =
      (close > emaFast + (atr * bearAccCut_ReclaimATR)) and
@@ -4192,6 +4192,7 @@ if pendingReset and (not inPos)
     posTag := ""
     entryModeTag := ""
     lastEntryBar := na
+    lastEntryReason := ""
     tradeHi := na
     tradeLo := na
 
