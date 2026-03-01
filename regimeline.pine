@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.03 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.04 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -283,6 +283,13 @@ bearInvNeed2Cl     = input.bool(true, "Bear SHORT invalidation: require 2 closes
 bearAdxMin        = input.float(20, "Bear SHORT: require ADX >=", group=grpBear, step=0.5)
 bearPB_CloseUnder_ATR = input.float(0.05, "Bear SHORT: retest close must be UNDER breakLvl by ATR*x", group=grpBear, step=0.01)
 
+// === BEAR_S_BREAKDOWN + HTF_ON Early Cut (loss-only, windowed) ===
+bearBdKillCut_On          = input.bool(true,  "BEAR BD: Early Cut when HTF_ON", group="Bear")
+bearBdKillCut_WindowBars  = input.int(12,     "BEAR BD: Cut Window (bars)", minval=1, maxval=48, group="Bear")
+bearBdKillCut_LossATR     = input.float(0.20, "BEAR BD: Cut if Loss ≥ ATR", step=0.05, group="Bear")
+bearBdKillCut_ReclaimATR  = input.float(0.00, "BEAR BD: Reclaim EMAfast + ATR", step=0.05, group="Bear")
+bearBdKillCut_CloseLocMin = input.float(0.55, "BEAR BD: Cut if CloseLoc ≥", step=0.05, group="Bear")
+
 rbUseSnapshotAccept = input.bool(true, "RB attempt acceptance uses snapshot (strict)", group=grpRB)
 
 grpTS="Time-stop downgrades"
@@ -499,12 +506,31 @@ closeLoc = (rng > 0) ? ((close - low) / rng) : 0.5
 bearCloseNearLowOk = closeLoc <= bearShortCloseNearLo
 rbCloseNearLowOk   = closeLoc <= rbShortCloseNearLo
 
-
-
 inPos   = strategy.position_size != 0
 isLong  = strategy.position_size > 0
 isShort = strategy.position_size < 0
 
+//====================================================
+// BEAR BD + HTF_ON Early Cut (loss-only, windowed)
+//====================================================
+bearBdKillCut_Active =
+     bearBdKillCut_On and inPos and isShort and (posTag == "BEAR") and
+     htfOnNow and
+     (bearSEntryArch == 0) and
+     (not na(bearSEntryBar)) and ((bar_index - bearSEntryBar) <= bearBdKillCut_WindowBars)
+
+bearBdKillCut_LosingNow =
+     (not na(bearSEntryPx)) and (close > bearSEntryPx + (atr * bearBdKillCut_LossATR))
+
+bearBdKillCut_ReclaimNow =
+     (close > emaFast + (atr * bearBdKillCut_ReclaimATR)) and (closeLoc >= bearBdKillCut_CloseLocMin)
+
+bearBdKillCutNow = barstate.isconfirmed and bearBdKillCut_Active and bearBdKillCut_LosingNow and bearBdKillCut_ReclaimNow
+
+// Execute BD early cut (latched: avoid double-close same bar)
+if bearBdKillCutNow and (na(lastBearShortExitBar) or (lastBearShortExitBar != bar_index))
+    closeShortAll("BEAR_BD_HTF_EARLY_CUT")
+    lastBearShortExitBar := bar_index
 //====================================================
 // Mode enum + helpers
 //====================================================
@@ -595,6 +621,10 @@ var bool  bearPBSeen    = false
 var int   bearPBBar     = na
 var int   lastBearShortExitBar = na   // Change 2: re-entry throttle
 
+// ---- BEAR SHORT entry stamps (needed for windowed, arch-specific exits)
+var int   bearSEntryBar  = na
+var float bearSEntryPx   = na
+var int   bearSEntryArch = na   // 1=BEAR_S_ACCEPT, 0=BEAR_S_BREAKDOWN
 //====================================================
 // BEAR diagnostics masks (LOG ONLY; no behavior impact)
 // allowMask: which “good” gates were true
@@ -1781,6 +1811,27 @@ bearInvPre =
      inPos and (posTag == "BEAR") and (not bearTP1Done) and not na(bearReclLvl) and
      (close > bearReclLvl) and (not bearInvNeed2Cl or close[1] > bearReclLvl)
 
+// --- BEAR_S_BREAKDOWN + HTF_ON early cut (loss-only, first N bars) ---
+// Purpose: stop BD shorts early when HTF flips ON and price reclaims up (prevents HTF bull-kill bleed).
+bearBdKillCut_Active =
+     bearBdKillCut_On and inPos and isShort and (posTag == "BEAR") and
+     htfOnNow and
+     (bearEntryArchA == 0) and
+     (not na(bearEntryBar)) and ((bar_index - bearEntryBar) <= bearBdKillCut_WindowBars)
+
+bearBdKillCut_LosingNow =
+     (not na(bearEntryClose)) and (close > bearEntryClose + (atr * bearBdKillCut_LossATR))
+
+bearBdKillCut_ReclaimNow =
+     (close > emaFast + (atr * bearBdKillCut_ReclaimATR)) and (closeLoc >= bearBdKillCut_CloseLocMin)
+
+bearBdKillCutNow = barstate.isconfirmed and bearBdKillCut_Active and bearBdKillCut_LosingNow and bearBdKillCut_ReclaimNow
+
+// Execute BD early cut (latched: avoid double-close same bar)
+if bearBdKillCutNow and (na(lastBearShortExitBar) or (lastBearShortExitBar != bar_index))
+    closeShortAll("BEAR_BD_HTF_EARLY_CUT")
+    lastBearShortExitBar := bar_index
+
 bearProt0Level = (inPos and posTag == "BEAR") ? (strategy.position_avg_price + atr * bearProt0Buf_ATR) : na
 bearInvPostTP0Protect =
      inPos and (posTag == "BEAR") and bearTP0Done and (not bearTP1Done) and not na(bearProt0Level) and
@@ -2862,7 +2913,9 @@ bearShortEnter =
 
 if bearShortEnter
     strategy.entry("SHORT", strategy.short)
-
+    bearSEntryBar  := bar_index
+    bearSEntryPx   := close
+    bearSEntryArch := bearAcceptImpulseEnter ? 1 : 0
     posTag := "BEAR"
     entryModeTag := "BEAR"
     // L1 pending entry (committed on actual fill)
@@ -4155,6 +4208,9 @@ if pendingReset and (not inPos)
     lastEntryBar := na
     tradeHi := na
     tradeLo := na
+    bearSEntryBar  := na
+    bearSEntryPx   := na
+    bearSEntryArch := na
 
     raTPMid     := na
     raStopBase  := na
