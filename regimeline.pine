@@ -606,14 +606,16 @@ var int   bearSEntryArch = na   // 1=BEAR_S_ACCEPT, 0=BEAR_S_BREAKDOWN
 // BEAR BD + HTF_ON Early Cut (loss-only, windowed, BD only)
 // Only triggers when HTF_ON is active (same context as HTF bull kill).
 //====================================================
+// Window is counted from HTF flip to ON (bull-kill activation), not from entry.
+// Otherwise it will never trigger on long-held losers that die by HTF-BULL-KILL.
 bearBdKillCut_Active =
      bearBdKillCut_On and inPos and isShort and (posTag == "BEAR") and
      htfOnNow and
      (bearSEntryArch == 0) and
-     (not na(bearSEntryBar)) and ((bar_index - bearSEntryBar) <= bearBdKillCut_WindowBars)
+     (htfFlipEventNow == "HTF_ON" or (not na(htfFlipBar) and (bar_index - htfFlipBar) <= bearBdKillCut_WindowBars))
 
-bearBdKillCut_LosingNow =
-     (not na(bearSEntryPx)) and (close > bearSEntryPx + (atr * bearBdKillCut_LossATR))
+// Loss-only, no ATR inflation (ATR expands exactly in the cases we're trying to cut)
+bearBdKillCut_LosingNow = close > strategy.position_avg_price
 
 bearBdKillCut_ReclaimNow =
      (close > emaFast + (atr * bearBdKillCut_ReclaimATR)) and (closeLoc >= bearBdKillCut_CloseLocMin)
