@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.04 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.03 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -282,21 +282,6 @@ bearTrailBuf_ATR  = input.float(0.25, "Bear post-TP1: EMA trail buffer (ATR*x)",
 bearInvNeed2Cl     = input.bool(true, "Bear SHORT invalidation: require 2 closes above bearReclLvl", group=grpBear)
 bearAdxMin        = input.float(20, "Bear SHORT: require ADX >=", group=grpBear, step=0.5)
 bearPB_CloseUnder_ATR = input.float(0.05, "Bear SHORT: retest close must be UNDER breakLvl by ATR*x", group=grpBear, step=0.01)
-
-// === BEAR_S_ACCEPT Immediate Reversal Cut (loss-only, early window) ===
-bearAccCut_On        = input.bool(true,  "BEAR Accept: Early Reversal Cut ON", group="Bear")
-bearAccCut_Window     = input.int(8,      "BEAR Accept: Cut Window (bars)", minval=1, maxval=12, group="Bear")
-bearAccCut_LossATR    = input.float(0.60, "BEAR Accept: Cut if Loss ≥ ATR", step=0.05, group="Bear")
-bearAccCut_ReclaimATR = input.float(0.00, "BEAR Accept: Reclaim EMAfast + ATR", step=0.05, group="Bear")
-bearAccCut_CloseLoc   = input.float(0.55, "BEAR Accept: Cut if CloseLoc ≥", step=0.05, group="Bear")
-
-// === BEAR_S_BREAKDOWN Early Reversal Cut (loss-only, HTF bull only) ===
-bearBdCut_On         = input.bool(true,  "BEAR Breakdown: Early Reversal Cut ON", group="Bear")
-bearBdCut_Window     = input.int(6,      "BEAR Breakdown: Cut Window (bars)", minval=1, maxval=20, group="Bear")
-bearBdCut_LossATR    = input.float(0.70, "BEAR Breakdown: Cut if Loss ≥ ATR", step=0.05, group="Bear")
-bearBdCut_ReclaimATR = input.float(0.10, "BEAR Breakdown: Reclaim EMAfast + ATR", step=0.05, group="Bear")
-bearBdCut_CloseLoc   = input.float(0.58, "BEAR Breakdown: Cut if CloseLoc ≥", step=0.05, group="Bear")
-bearBdCut_OnlyHTFBull= input.bool(true,  "BEAR Breakdown: Only when HTF bull & not neutral", group="Bear") 
 
 rbUseSnapshotAccept = input.bool(true, "RB attempt acceptance uses snapshot (strict)", group=grpRB)
 
@@ -599,10 +584,6 @@ var int   bearStartBar = na
 var float bearStartY   = na
 var int   bearEndBar   = na
 var float bearEndY     = na
-
-var int   bearEntryBar   = na
-var float bearEntryClose = na
-var int   bearEntryArchA = 0   // 1 = BEAR_S_ACCEPT, 0 = BEAR_S_BREAKDOWN
 
 // BEAR_S_ACCEPT climax-delay state (only used when acceptance candle is liquidation-like)
 var bool  bearAccClimaxPend   = false
@@ -1460,8 +1441,7 @@ if bearReclaimOk
     bearEndY   := low - lblPadDown
     bearActive      := false
     bearBreakLvl    := na
-    // CRITICAL: never wipe bearReclLvl while a BEAR short is still open; bearInvPre needs it.
-    bearReclLvl := (inPos and (posTag == "BEAR")) ? bearReclLvl : na
+    bearReclLvl     := na
     bearAcceptedBar := na
     bearRenewBar    := na
     bearPBSeen := false
@@ -2882,10 +2862,6 @@ bearShortEnter =
 
 if bearShortEnter
     strategy.entry("SHORT", strategy.short)
-    
-    bearEntryBar   := bar_index
-    bearEntryClose := close
-    bearEntryArchA := bearAcceptImpulseEnter ? 1 : 0
 
     posTag := "BEAR"
     entryModeTag := "BEAR"
@@ -2893,7 +2869,6 @@ if bearShortEnter
     L1_pendDir  := "SHORT"
     L1_pendReg  := "BEAR"
     L1_pendArch := bearAcceptImpulseEnter ? "BEAR_S_ACCEPT" : "BEAR_S_BREAKDOWN"
-    lastEntryReason := L1_pendArch
 
     L1_pendEntryEngine  := "BEAR_ENTRY"
     L1_pendHtfState     := htfOnNow ? "HTF_ON" : "HTF_OFF"
@@ -4020,43 +3995,6 @@ rbBarsActive = (not na(rbTSStartBar)) ? (bar_index - rbTSStartBar) : 0
 rbFlatTimeStop = (not inPos) and (rbAttempt or rbPending or rbActive) and not na(rbTSStartBar) and (rbBarsActive >= rbTS_Bars)
 
 //====================================================
-// BEAR_S_ACCEPT early reversal cut (loss-only, windowed)
-//====================================================
-
-// Uses existing state lastEntryBar (already used for bearBarsIn in v7.04)
-bearAccCut_Active =
-     bearAccCut_On and inPos and isShort and (posTag == "BEAR") and
-     (bearEntryArchA == 1) and
-     htfTrendOk and (not htfNeutral) and
-     (not na(bearEntryBar)) and (bar_index - bearEntryBar <= bearAccCut_Window)
-
-bearAccCut_LosingNow = (not na(bearEntryClose)) and (close > bearEntryClose + (atr * bearAccCut_LossATR))
-
-bearAccCut_ReclaimNow =
-     (close > emaFast + (atr * bearAccCut_ReclaimATR)) and
-     (closeLoc >= bearAccCut_CloseLoc)
-
-bearAccEarlyCut = barstate.isconfirmed and bearAccCut_Active and bearAccCut_LosingNow and bearAccCut_ReclaimNow
-
-//====================================================
-// BEAR_S_BREAKDOWN early reversal cut (loss-only, windowed, HTF bull only)
-//====================================================
-bearBdCut_HtfOk = (not bearBdCut_OnlyHTFBull) or (htfTrendOk and (not htfNeutral))
-
-bearBdCut_Active =
-     bearBdCut_On and inPos and isShort and (posTag == "BEAR") and
-     (bearEntryArchA == 0) and
-     bearBdCut_HtfOk and
-     (not na(bearEntryBar)) and (bar_index - bearEntryBar <= bearBdCut_Window)
-
-bearBdCut_LosingNow =
-     (not na(bearEntryClose)) and (close > bearEntryClose + (atr * bearBdCut_LossATR))
-
-bearBdCut_ReclaimNow =
-     (close > emaFast + (atr * bearBdCut_ReclaimATR)) and (closeLoc >= bearBdCut_CloseLoc)
-
-bearBdEarlyCut = barstate.isconfirmed and bearBdCut_Active and bearBdCut_LosingNow and bearBdCut_ReclaimNow
-//====================================================
 // EXIT EXECUTION + L1/L2 latching (NO close_all)
 //====================================================
 
@@ -4085,20 +4023,10 @@ if exitOk and inPos
         exitReg := "BULL"
 
     // 3) Short invalidations
-    // 3a) BEAR Accept early reversal cut (loss-only, first N bars)
-    if (not doExit) and bearAccEarlyCut
-        doExit := true
-        exitReason := "BEAR_ACC_EARLY_CUT"
-        exitReg := "BEAR"
-    // 3b) BEAR Breakdown early reversal cut (loss-only, first N bars, HTF bull only)
-    if (not doExit) and bearBdEarlyCut
-        doExit := true
-        exitReason := "BEAR_BD_EARLY_CUT"
-        exitReg := "BEAR"
-    // 3c) BEAR trail exit (post-TP1 trail reclaim)
-    if (not doExit) and bearInvPostTrail
-        doExit := true
-        exitReason := "BEAR_TRAIL"
+    // 3a) BEAR trail exit (post-TP1 trail reclaim)
+    if (not doExit) and bearInvPostTrail 
+        doExit := true 
+        exitReason := "BEAR_TRAIL" 
         exitReg := "BEAR"
     // 3a.5) BEAR post-TP0 no-extension exit (remainder proof failed)
     if (not doExit) and bearTP0NoExtExit 
@@ -4225,7 +4153,6 @@ if pendingReset and (not inPos)
     posTag := ""
     entryModeTag := ""
     lastEntryBar := na
-    lastEntryReason := ""
     tradeHi := na
     tradeLo := na
 
