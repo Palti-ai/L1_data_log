@@ -602,30 +602,37 @@ var int   bearSEntryBar  = na
 var float bearSEntryPx   = na
 var int   bearSEntryArch = na   // 1=BEAR_S_ACCEPT, 0=BEAR_S_BREAKDOWN
 
+
 //====================================================
 // BEAR BD + HTF_ON Early Cut (loss-only, windowed, BD only)
-// Only triggers when HTF_ON is active (same context as HTF bull kill).
+// Window is counted from HTF_ON flip, not from entry.
+// Cut triggers on structural reclaim (EMAfast) while the short is losing.
 //====================================================
-// Window is counted from HTF flip to ON (bull-kill activation), not from entry.
-// Otherwise it will never trigger on long-held losers that die by HTF-BULL-KILL.
+
+// bars since HTF_ON flip (window anchor)
+bearBdKillCut_HtfWindowOk =
+     (htfFlipEventNow == "HTF_ON") or
+     (not na(htfFlipBar) and (bar_index - htfFlipBar) <= bearBdKillCut_WindowBars)
+
 bearBdKillCut_Active =
      bearBdKillCut_On and inPos and isShort and (posTag == "BEAR") and
      htfOnNow and
      (bearSEntryArch == 0) and
-     (htfFlipEventNow == "HTF_ON" or (not na(htfFlipBar) and (bar_index - htfFlipBar) <= bearBdKillCut_WindowBars))
+     bearBdKillCut_HtfWindowOk
 
-// Loss-only, no ATR inflation (ATR expands exactly in the cases we're trying to cut)
+// LOSS-ONLY (no ATR inflation)
 bearBdKillCut_LosingNow = close > strategy.position_avg_price
 
-bearBdKillCut_ReclaimNow =
-     (close > emaFast + (atr * bearBdKillCut_ReclaimATR)) and (closeLoc >= bearBdKillCut_CloseLocMin)
+// Structural reclaim (no ATR buffer, no closeLoc gate)
+bearBdKillCut_ReclaimNow = close > emaFast
 
 bearBdKillCutNow = barstate.isconfirmed and bearBdKillCut_Active and bearBdKillCut_LosingNow and bearBdKillCut_ReclaimNow
 
-// Execute early cut (use strategy.close directly to avoid any function-order issues)
+// Execute early cut (latched: avoid double-close same bar)
 if bearBdKillCutNow and (na(lastBearShortExitBar) or (lastBearShortExitBar != bar_index))
     strategy.close("SHORT", comment="BEAR_BD_HTF_EARLY_CUT")
     lastBearShortExitBar := bar_index
+
 //====================================================
 // BEAR diagnostics masks (LOG ONLY; no behavior impact)
 // allowMask: which “good” gates were true
@@ -651,7 +658,6 @@ var bool rbSPBSeen = false
 var int  rbSPBBar  = na
 var float rbSValue = na
 var bool rbFromPBBlock = false
-
 
 // ---- Bull acceptance-up (armed -> retest -> reclaim)
 var bool  pendingBull   = false
