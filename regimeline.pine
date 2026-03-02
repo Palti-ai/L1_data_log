@@ -2866,7 +2866,7 @@ if bearShortEnter
 
     posTag := "BEAR"
     entryModeTag := "BEAR"
-    bearEntryArch := bearSEntryArch
+    bearEntryArch := bearAcceptImpulseEnter ? 1 : 0   // 1=acceptance, 0=breakdown
     // L1 pending entry (committed on actual fill)
     L1_pendDir  := "SHORT"
     L1_pendReg  := "BEAR"
