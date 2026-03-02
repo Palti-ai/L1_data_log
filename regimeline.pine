@@ -599,6 +599,7 @@ var int   lastBearShortExitBar = na   // Change 2: re-entry throttle
 var int bearEntryArch = na
 var float bearReclLvlPos = na
 var float bearEmaFastPos = na
+var int bearBreakFirstCloseBar = na
 //====================================================
 // BEAR diagnostics masks (LOG ONLY; no behavior impact)
 // allowMask: which “good” gates were true
