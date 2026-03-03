@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.08 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.09 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -254,6 +254,7 @@ bearExitUseReclaim = input.bool(true,  "Bear short: exit on LTF reclaim (pre HTF
 bearExitReclaimBars = input.int(2,     "Bear short: reclaim closes needed",                  group=grpBear, minval=1)
 bearExitUseEmaReclaim = input.bool(true, "Bear short: EMAfast reclaim counts as reclaim",    group=grpBear)
 bearBreakMaxDistEFATR = input.float(2.6, "Bear breakdown: max |close-EMAfast| (ATR)", group=grpBear, step=0.1, minval=0.1)
+bearBreakDistBypassBars = input.int(4, "Bear breakdown: bypass EMA-distance filter if PB age <= N bars", group=grpBear, minval=0)
 // BEAR_S_ACCEPT liquidation-climax veto (blocks shorting the dump)
 bearAccClimax_RngAtrMin = input.float(1.80, "BEAR Accept Veto: Range/ATR ≥", step=0.05, group="Bear")
 bearAccClimax_BodyPctMin = input.float(0.65, "BEAR Accept Veto: BodyPct ≥", step=0.05, group="Bear")
@@ -2141,13 +2142,15 @@ if bearPBExpired
 
 // Breakdown trigger: bearish candle breaks micro-low and closes below bearBreakLvl
 bearBreakLB = ta.lowest(low[1], bearBreakLookback)
-
+int bearPB_age = (bearPBSeen and not na(bearPBBar)) ? (bar_index - bearPBBar) : 999999
+bool bearDistOk = (atr <= 0) ? true : (math.abs(close - emaFast) / atr <= bearBreakMaxDistEFATR)
+bool bearDistGateOk = (bearPB_age <= bearBreakDistBypassBars) or bearDistOk
 bearShortBreakdownNow =
      bearActive and bearShortOn and (not inPos) and bearPBSeen and
      (adx >= bearAdxMin) and
      (close < bearBreakLvl) and (close < open) and (bodyPct >= bearMinBodyPct) and
      (close < bearBreakLB) and
-     (atr > 0) and (math.abs(close - emaFast) / atr <= bearBreakMaxDistEFATR) and
+     bearDistGateOk and
      bearShortADXOk and bearCloseNearLowOk
 
 if barstate.isconfirmed and bearShortBreakdownNow
@@ -2870,7 +2873,8 @@ bool bearBD_OverrideOk =
      (adx >= bearAdxMin) and
      (not na(bearBreakLvl)) and (close < bearBreakLvl) and
      (not na(bearBreakLB))  and (close < bearBreakLB) and
-     bearShortADXOk and bearCloseNearLowOk
+     bearShortADXOk and bearCloseNearLowOk and 
+     bearDistOk
 
 bearShortEnter = (bearAcceptImpulseEnter) or (
   barstate.isconfirmed and (not inPos) and (bearShortBreakdownNow or bearBD_OverrideOk) and bearLocalDowntrendOk
