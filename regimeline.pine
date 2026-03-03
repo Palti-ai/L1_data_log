@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.11 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.13 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -755,7 +755,9 @@ var int   L1_pendBSI         = na
 var int   L1_pendBSA         = na
 var int   L1_pendBSR         = na
 
-
+// ---- BEAR pending latch snapshot (captured at signal, committed on fill) ----
+var int L1_pendBearPBSeen = na
+var int L1_pendBearPBBar  = na
 
 // ---- Range-A snapshot + structure
 var float raStructLow = na
@@ -1045,8 +1047,8 @@ if posOpened
         L1_bearBreakLvlEnt     := bearBreakLvl
         L1_bearReclLvlEnt      := bearReclLvl
         L1_bearReclaimCntEnt   := bearReclaimCloseCnt
-        L1_bearPBSeenEnt       := bearPBSeen ? 1 : 0
-        L1_bearPBBarEnt        := bearPBBar
+        L1_bearPBSeenEnt := L1_pendBearPBSeen
+        L1_bearPBBarEnt  := L1_pendBearPBBar
         L1_lastBearExitBarEnt  := lastBearShortExitBar
         L1_bearShortADXOkEnt   := bearShortADXOk ? 1 : 0
         L1_bearCloseNearLowEnt := bearCloseNearLowOk ? 1 : 0
@@ -1072,7 +1074,9 @@ if posOpened
         L1_bearHtfFlipEnt      := ""
         L1_bearAllowMaskEnt    := na
         L1_bearVetoMaskEnt     := na
-
+    // Clear BEAR pending latch snapshot after commit
+    L1_pendBearPBSeen := na
+    L1_pendBearPBBar  := na
 
 // L1-only: defer PB snapshot reset until AFTER L1 closedtrades rows are emitted on the flat bar
 if posClosed
@@ -2178,6 +2182,9 @@ bearShortBreakdownNow =
      bearDistGateOk and
      bearShortADXOk and bearCloseNearLowOk
 
+var int c_dbgBreakSig = 0
+if barstate.isconfirmed and bearShortBreakdownNow
+    c_dbgBreakSig += 1
 if barstate.isconfirmed and bearShortBreakdownNow
     c_bearBreakSig += 1
 
@@ -2901,11 +2908,19 @@ bool bearBD_OverrideOk =
      bearShortADXOk and bearCloseNearLowOk and 
      bearDistOk
 
-bearShortEnter = (bearAcceptImpulseEnter) or (
-  barstate.isconfirmed and (not inPos) and (bearShortBreakdownNow or bearBD_OverrideOk) and bearLocalDowntrendOk
-  and (close < emaFast) and bearLockoutOk and bearReentryOk and shortCooldownOk
-  and ( bearAllowContinuation or (not bearKillUseHTFveto or htfOffForRA) )
+// ---- Split BEAR entry paths (avoid ACCEPT overriding BREAKDOWN) ----
+bool bearEnterBreak = (
+     barstate.isconfirmed and (not inPos) and bearShortBreakdownNow and bearLocalDowntrendOk
+     and (close < emaFast) and bearLockoutOk and bearReentryOk and shortCooldownOk
+     and (bearAllowContinuation or (not bearKillUseHTFveto or htfOffForRA))
 )
+
+bool bearEnterAccept = (
+     bearAcceptImpulseEnter
+     and (not bearEnterBreak)   // key: if breakdown is valid, do NOT route as ACCEPT
+)
+
+bool bearShortEnter = bearEnterAccept or bearEnterBreak
 
 if bearShortEnter
     strategy.entry("SHORT", strategy.short)
@@ -2915,13 +2930,13 @@ if bearShortEnter
 
     posTag := "BEAR"
     entryModeTag := "BEAR"
-    bearEntryArch := bearAcceptImpulseEnter ? 1 : 0   // 1=acceptance, 0=breakdown
+    bearEntryArch := bearEnterAccept ? 1 : 0   // 1=accept, 0=breakdown
     bearReclLvlPos := bearReclLvl
     bearEmaFastPos := emaFast    
 // L1 pending entry (committed on actual fill)
     L1_pendDir  := "SHORT"
     L1_pendReg  := "BEAR"
-    L1_pendArch := bearAcceptImpulseEnter ? "BEAR_S_ACCEPT" : "BEAR_S_BREAKDOWN"
+    L1_pendArch   := bearEnterAccept ? "BEAR_S_ACCEPT" : "BEAR_S_BREAKDOWN"
 
     L1_pendEntryEngine  := "BEAR_ENTRY"
     L1_pendHtfState     := htfOnNow ? "HTF_ON" : "HTF_OFF"
@@ -2950,7 +2965,9 @@ if bearShortEnter
     L1_pendBSI := l2_barsSince(l2_lastImpulseBar)
     L1_pendBSA := l2_barsSince(l2_lastAcceptBar)
     L1_pendBSR := l2_barsSince(l2_lastReclaimBar)
-
+    // Snapshot PB latch AT SIGNAL TIME (before Consume latch clears it)
+    L1_pendBearPBSeen := bearPBSeen ? 1 : 0
+    L1_pendBearPBBar  := bearPBBar
 
     entered := true
     entryMode := Mode.Wait  // Bear remains overlay; do not force router mode
@@ -4495,14 +4512,14 @@ logTrade(_mode, _score, _exitReason, _outcome) =>
 //====================================================
 // Diagnostics HUD (bottom-right) — clean, readable numbers
 //====================================================
-var table hud = table.new(position.bottom_right, 2, 24)
+var table hud = table.new(position.bottom_right, 2, 25)
 var int hudLastBar = na
 
 
 doHUD = showDiagHUD and barstate.isconfirmed and (na(hudLastBar) or bar_index != hudLastBar)
 if doHUD
     hudLastBar := bar_index
-    table.clear(hud, 0, 0, 1, 23)
+    table.clear(hud, 0, 0, 1, 24)
 
     // Title
     table.cell(hud, 0, 0, "ADX Split HUD", text_color=color.white, bgcolor=color.new(color.black, 0))
@@ -4596,8 +4613,11 @@ if doHUD
     table.cell(hud, 0, 22, "BEAR breakdown signals", text_color=color.black)
     table.cell(hud, 1, 22, str.tostring(c_bearBreakSig), text_color=color.black)
 
-    table.cell(hud, 0, 23, "BEAR reentry OK bars", text_color=color.black)
-    table.cell(hud, 1, 23, str.tostring(c_bearReentryOk), text_color=color.black)
+    table.cell(hud, 0, 23, "BEAR DBG breakdown signals", text_color=color.black)
+    table.cell(hud, 1, 23, str.tostring(c_dbgBreakSig), text_color=color.black)
+
+    table.cell(hud, 0, 24, "BEAR reentry OK bars", text_color=color.black)
+    table.cell(hud, 1, 24, str.tostring(c_bearReentryOk), text_color=color.black)
 
 
 //====================================================
