@@ -2150,42 +2150,25 @@ var int bearFreshNoPBUsedEndBar = na
 if barstate.isconfirmed and (bullEndBar != nz(bullEndBar[1]))
     bearFreshNoPBUsedEndBar := na
 
-bool bearFreshNoPBOk =
+bool bearFreshNoPBOk = (
      bearBD_FreshNoPB_Allow and bearActive and (htfOnNow == false) and
      (endAgeBars <= bearBD_FreshEndBarsMax) and
      na(bearFreshNoPBUsedEndBar) and
      bearNoPBImpulseOk
+)
 
 // Expire stale retest latch
 bearPBExpired = bearPBSeen and (not inPos) and (not na(bearPBBar)) and ((bar_index - bearPBBar) > bearArmMaxBars)
 if bearPBExpired
+    bearPBSeen := false
+    bearPBBar  := na
+
 // Breakdown trigger: bearish candle breaks micro-low and closes below bearBreakLvl
 bearBreakLB = ta.lowest(low[1], bearBreakLookback)
 int bearPB_age = (bearPBSeen and not na(bearPBBar)) ? (bar_index - bearPBBar) : 999999
 float bearMaxDistNow = bearFreshNoPBOk ? bearBD_FreshMaxDistEFATR : bearBreakMaxDistEFATR
 bool bearDistOk = (atr <= 0) ? true : (math.abs(close - emaFast) / atr <= bearMaxDistNow)
 bool bearDistGateOk = (bearPB_age <= bearBreakDistBypassBars) or bearDistOk
-    bearPBSeen := false
-    bearPBBar  := na
-
-// --- Fresh NO-PB breakdown allowance (restore v7.03 winners safely) ---
-if barstate.isconfirmed and (bearAcceptedBar != nz(bearAcceptedBar[1]))
-    bearFreshNoPBUsedAccBar := na
-
-// --- Fresh NO-PB breakdown allowance: anchor to END_BULL, not bearAcceptedBar ---
-var int bearFreshNoPBUsedEndBar = na
-
-// reset one-shot latch when END_BULL bar changes
-if barstate.isconfirmed and (bullEndBar != nz(bullEndBar[1]))
-    bearFreshNoPBUsedEndBar := na
-
-int endAgeBars = (bearActive and not na(bullEndBar)) ? (bar_index - bullEndBar) : 999999
-
-bool bearFreshNoPBOk =
-     bearBD_FreshNoPB_Allow and bearActive and (htfOnNow == false) and
-     (endAgeBars <= bearBD_FreshEndBarsMax) and
-     na(bearFreshNoPBUsedEndBar) and
-     bearBD_LateImpulseOk   // reuse your existing initiative filter (bodyPct + closeLoc)
 
 bearShortBreakdownNow =
      bearActive and bearShortOn and (not inPos) and (bearPBSeen or bearFreshNoPBOk) and
