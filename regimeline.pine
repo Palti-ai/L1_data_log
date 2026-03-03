@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.07 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.08 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -2863,7 +2863,14 @@ bool bearBD_LateImpulseOk = (bodyPct >= bearBD_LateBodyPctMin) and (closeLoc >= 
 // If PB timestamp exists, you can treat "late" as "PB latch exists and is older than X bars".
 // We won't hard-code X here (since your stale logic is currently inside bearShortBreakdownNow),
 // we just use this as an additional permissive gate when breakdown is otherwise valid.
-bool bearBD_OverrideOk = bearBD_LateAllow and bearBD_LateImpulseOk
+// Late override must still be a REAL breakdown-context (not "impulse short anywhere")
+bool bearBD_OverrideOk =
+     bearBD_LateAllow and bearBD_LateImpulseOk and
+     bearActive and bearShortOn and bearPBSeen and
+     (adx >= bearAdxMin) and
+     (not na(bearBreakLvl)) and (close < bearBreakLvl) and
+     (not na(bearBreakLB))  and (close < bearBreakLB) and
+     bearShortADXOk and bearCloseNearLowOk
 
 bearShortEnter = (bearAcceptImpulseEnter) or (
   barstate.isconfirmed and (not inPos) and (bearShortBreakdownNow or bearBD_OverrideOk) and bearLocalDowntrendOk
