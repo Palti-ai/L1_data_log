@@ -2139,6 +2139,23 @@ if bearActive and bearShortOn and (not inPos) and not na(bearBreakLvl)
             c_bearPBSeen += 1
         bearPBBar  := bar_index
 
+// --- Fresh NO-PB window (must be defined BEFORE distance gate uses it) ---
+int endAgeBars = (bearActive and not na(bullEndBar)) ? (bar_index - bullEndBar) : 999999
+
+// Local impulse test (do NOT depend on bearBD_LateImpulseOk here; it may be scoped later)
+bool bearNoPBImpulseOk = (bodyPct >= bearBD_LateBodyPctMin) and (closeLoc >= bearBD_LateCloseLocMin)
+
+// One-shot latch (declare var at top if not already present)
+var int bearFreshNoPBUsedEndBar = na
+if barstate.isconfirmed and (bullEndBar != nz(bullEndBar[1]))
+    bearFreshNoPBUsedEndBar := na
+
+bool bearFreshNoPBOk =
+     bearBD_FreshNoPB_Allow and bearActive and (htfOnNow == false) and
+     (endAgeBars <= bearBD_FreshEndBarsMax) and
+     na(bearFreshNoPBUsedEndBar) and
+     bearNoPBImpulseOk
+
 // Expire stale retest latch
 bearPBExpired = bearPBSeen and (not inPos) and (not na(bearPBBar)) and ((bar_index - bearPBBar) > bearArmMaxBars)
 if bearPBExpired
@@ -2150,13 +2167,6 @@ bool bearDistOk = (atr <= 0) ? true : (math.abs(close - emaFast) / atr <= bearMa
 bool bearDistGateOk = (bearPB_age <= bearBreakDistBypassBars) or bearDistOk
     bearPBSeen := false
     bearPBBar  := na
-
-// Breakdown trigger: bearish candle breaks micro-low and closes below bearBreakLvl
-bearBreakLB = ta.lowest(low[1], bearBreakLookback)
-int bearPB_age = (bearPBSeen and not na(bearPBBar)) ? (bar_index - bearPBBar) : 999999
-float bearMaxDistNow = bearFreshNoPBOk ? bearBD_FreshMaxDistEFATR : bearBreakMaxDistEFATR
-bool bearDistOk = (atr <= 0) ? true : (math.abs(close - emaFast) / atr <= bearMaxDistNow)
-bool bearDistGateOk = (bearPB_age <= bearBreakDistBypassBars) or bearDistOk
 
 // --- Fresh NO-PB breakdown allowance (restore v7.03 winners safely) ---
 if barstate.isconfirmed and (bearAcceptedBar != nz(bearAcceptedBar[1]))
