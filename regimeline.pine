@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.09 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.10 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -287,6 +287,8 @@ bearPB_CloseUnder_ATR = input.float(0.05, "Bear SHORT: retest close must be UNDE
 bearBD_LateAllow      = input.bool(true,  "Bear breakdown: allow late entries only if impulse candle", group=grpBear)
 bearBD_LateBodyPctMin = input.float(0.65, "Bear breakdown late: min bodyPct", group=grpBear, step=0.01, minval=0.05, maxval=0.95)
 bearBD_LateCloseLocMin= input.float(0.80, "Bear breakdown late: min closeLoc", group=grpBear, step=0.01, minval=0.05, maxval=0.99)
+bearBD_FreshNoPB_Allow   = input.bool(true, "Bear breakdown: allow NO-PB only right after bear accept", group=grpBear)
+bearBD_FreshNoPB_BarsMax = input.int(12, "Bear breakdown NO-PB: max bars since bear acceptance", group=grpBear, minval=1)
 
 rbUseSnapshotAccept = input.bool(true, "RB attempt acceptance uses snapshot (strict)", group=grpRB)
 
@@ -589,6 +591,7 @@ var int   bearStartBar = na
 var float bearStartY   = na
 var int   bearEndBar   = na
 var float bearEndY     = na
+var int bearFreshNoPBUsedAccBar = na   // one-shot latch per bear acceptance
 
 // BEAR_S_ACCEPT climax-delay state (only used when acceptance candle is liquidation-like)
 var bool  bearAccClimaxPend   = false
@@ -2145,8 +2148,18 @@ bearBreakLB = ta.lowest(low[1], bearBreakLookback)
 int bearPB_age = (bearPBSeen and not na(bearPBBar)) ? (bar_index - bearPBBar) : 999999
 bool bearDistOk = (atr <= 0) ? true : (math.abs(close - emaFast) / atr <= bearBreakMaxDistEFATR)
 bool bearDistGateOk = (bearPB_age <= bearBreakDistBypassBars) or bearDistOk
+
+// --- Fresh NO-PB breakdown allowance (restore v7.03 winners safely) ---
+if barstate.isconfirmed and (bearAcceptedBar != nz(bearAcceptedBar[1]))
+    bearFreshNoPBUsedAccBar := na
+
+int bearAccAge = (bearActive and not na(bearAcceptedBar)) ? (bar_index - bearAcceptedBar) : 999999
+bool bearFreshNoPBOk =
+     bearBD_FreshNoPB_Allow and bearActive and (bearAccAge <= bearBD_FreshNoPB_BarsMax) and
+     (na(bearFreshNoPBUsedAccBar))  // one-shot per acceptance
+
 bearShortBreakdownNow =
-     bearActive and bearShortOn and (not inPos) and bearPBSeen and
+     bearActive and bearShortOn and (not inPos) and (bearPBSeen or bearFreshNoPBOk) and
      (adx >= bearAdxMin) and
      (close < bearBreakLvl) and (close < open) and (bodyPct >= bearMinBodyPct) and
      (close < bearBreakLB) and
@@ -2884,6 +2897,9 @@ bearShortEnter = (bearAcceptImpulseEnter) or (
 
 if bearShortEnter
     strategy.entry("SHORT", strategy.short)
+    // consume the one-shot fresh no-PB allowance
+    if bearFreshNoPBOk and (not bearPBSeen)
+        bearFreshNoPBUsedAccBar := bearAcceptedBar
 
     posTag := "BEAR"
     entryModeTag := "BEAR"
