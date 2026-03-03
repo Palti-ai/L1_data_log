@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.10 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.11 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -254,6 +254,8 @@ bearExitUseReclaim = input.bool(true,  "Bear short: exit on LTF reclaim (pre HTF
 bearExitReclaimBars = input.int(2,     "Bear short: reclaim closes needed",                  group=grpBear, minval=1)
 bearExitUseEmaReclaim = input.bool(true, "Bear short: EMAfast reclaim counts as reclaim",    group=grpBear)
 bearBreakMaxDistEFATR = input.float(2.6, "Bear breakdown: max |close-EMAfast| (ATR)", group=grpBear, step=0.1, minval=0.1)
+bearBD_FreshEndBarsMax   = input.int(16, "Bear breakdown (no-PB): max bars since END_BULL", group=grpBear, minval=1)
+bearBD_FreshMaxDistEFATR = input.float(3.6, "Bear breakdown (no-PB fresh): max |close-EMAfast| (ATR)", group=grpBear, step=0.1, minval=0.5)
 bearBreakDistBypassBars = input.int(4, "Bear breakdown: bypass EMA-distance filter if PB age <= N bars", group=grpBear, minval=0)
 // BEAR_S_ACCEPT liquidation-climax veto (blocks shorting the dump)
 bearAccClimax_RngAtrMin = input.float(1.80, "BEAR Accept Veto: Range/ATR ≥", step=0.05, group="Bear")
@@ -2140,23 +2142,40 @@ if bearActive and bearShortOn and (not inPos) and not na(bearBreakLvl)
 // Expire stale retest latch
 bearPBExpired = bearPBSeen and (not inPos) and (not na(bearPBBar)) and ((bar_index - bearPBBar) > bearArmMaxBars)
 if bearPBExpired
+// Breakdown trigger: bearish candle breaks micro-low and closes below bearBreakLvl
+bearBreakLB = ta.lowest(low[1], bearBreakLookback)
+int bearPB_age = (bearPBSeen and not na(bearPBBar)) ? (bar_index - bearPBBar) : 999999
+float bearMaxDistNow = bearFreshNoPBOk ? bearBD_FreshMaxDistEFATR : bearBreakMaxDistEFATR
+bool bearDistOk = (atr <= 0) ? true : (math.abs(close - emaFast) / atr <= bearMaxDistNow)
+bool bearDistGateOk = (bearPB_age <= bearBreakDistBypassBars) or bearDistOk
     bearPBSeen := false
     bearPBBar  := na
 
 // Breakdown trigger: bearish candle breaks micro-low and closes below bearBreakLvl
 bearBreakLB = ta.lowest(low[1], bearBreakLookback)
 int bearPB_age = (bearPBSeen and not na(bearPBBar)) ? (bar_index - bearPBBar) : 999999
-bool bearDistOk = (atr <= 0) ? true : (math.abs(close - emaFast) / atr <= bearBreakMaxDistEFATR)
+float bearMaxDistNow = bearFreshNoPBOk ? bearBD_FreshMaxDistEFATR : bearBreakMaxDistEFATR
+bool bearDistOk = (atr <= 0) ? true : (math.abs(close - emaFast) / atr <= bearMaxDistNow)
 bool bearDistGateOk = (bearPB_age <= bearBreakDistBypassBars) or bearDistOk
 
 // --- Fresh NO-PB breakdown allowance (restore v7.03 winners safely) ---
 if barstate.isconfirmed and (bearAcceptedBar != nz(bearAcceptedBar[1]))
     bearFreshNoPBUsedAccBar := na
 
-int bearAccAge = (bearActive and not na(bearAcceptedBar)) ? (bar_index - bearAcceptedBar) : 999999
+// --- Fresh NO-PB breakdown allowance: anchor to END_BULL, not bearAcceptedBar ---
+var int bearFreshNoPBUsedEndBar = na
+
+// reset one-shot latch when END_BULL bar changes
+if barstate.isconfirmed and (bullEndBar != nz(bullEndBar[1]))
+    bearFreshNoPBUsedEndBar := na
+
+int endAgeBars = (bearActive and not na(bullEndBar)) ? (bar_index - bullEndBar) : 999999
+
 bool bearFreshNoPBOk =
-     bearBD_FreshNoPB_Allow and bearActive and (bearAccAge <= bearBD_FreshNoPB_BarsMax) and
-     (na(bearFreshNoPBUsedAccBar))  // one-shot per acceptance
+     bearBD_FreshNoPB_Allow and bearActive and (htfOnNow == false) and
+     (endAgeBars <= bearBD_FreshEndBarsMax) and
+     na(bearFreshNoPBUsedEndBar) and
+     bearBD_LateImpulseOk   // reuse your existing initiative filter (bodyPct + closeLoc)
 
 bearShortBreakdownNow =
      bearActive and bearShortOn and (not inPos) and (bearPBSeen or bearFreshNoPBOk) and
@@ -2899,7 +2918,7 @@ if bearShortEnter
     strategy.entry("SHORT", strategy.short)
     // consume the one-shot fresh no-PB allowance
     if bearFreshNoPBOk and (not bearPBSeen)
-        bearFreshNoPBUsedAccBar := bearAcceptedBar
+        bearFreshNoPBUsedEndBar := bullEndBar
 
     posTag := "BEAR"
     entryModeTag := "BEAR"
