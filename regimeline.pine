@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.14 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.15 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -1421,7 +1421,7 @@ bearAcceptImpulseBase =
      barstate.isconfirmed and (not inPos) and bearShortOn and bearAcceptEntryOn and
      shortCooldownOk and bearShortADXOk and (adx >= bearShortADXMin) and
      (close < bearBreakLvl) and (close < open) and
-     (bodyPct >= bearMinBodyPct) and
+     (bodyPct >= bearMinBodyPct) and bearCloseNearLowOk and
      (not bearAcceptVetoLowAdx)
 bearAcceptImpulseEnter =
      bearAcceptImpulseBase and (
