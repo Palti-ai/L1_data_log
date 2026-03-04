@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.13 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.14 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -1421,7 +1421,7 @@ bearAcceptImpulseBase =
      barstate.isconfirmed and (not inPos) and bearShortOn and bearAcceptEntryOn and
      shortCooldownOk and bearShortADXOk and (adx >= bearShortADXMin) and
      (close < bearBreakLvl) and (close < open) and
-     (bodyPct >= bearMinBodyPct) and bearCloseNearLowOk and
+     (bodyPct >= bearMinBodyPct) and
      (not bearAcceptVetoLowAdx)
 bearAcceptImpulseEnter =
      bearAcceptImpulseBase and (
@@ -2180,7 +2180,7 @@ bearShortBreakdownNow =
      (close < bearBreakLvl) and (close < open) and (bodyPct >= bearMinBodyPct) and
      (close < bearBreakLB) and
      bearDistGateOk and
-     bearShortADXOk and bearCloseNearLowOk
+     bearShortADXOk
 
 var int c_dbgBreakSig = 0
 if barstate.isconfirmed and bearShortBreakdownNow
@@ -2905,7 +2905,7 @@ bool bearBD_OverrideOk =
      (adx >= bearAdxMin) and
      (not na(bearBreakLvl)) and (close < bearBreakLvl) and
      (not na(bearBreakLB))  and (close < bearBreakLB) and
-     bearShortADXOk and bearCloseNearLowOk and 
+     bearShortADXOk and 
      bearDistOk
 
 // ---- Split BEAR entry paths (avoid ACCEPT overriding BREAKDOWN) ----
