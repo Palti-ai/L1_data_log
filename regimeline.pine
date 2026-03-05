@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.17 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.18 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -516,7 +516,9 @@ rbShortADXOk = (adx >= rbShortADXMin) and (not rbShortUseSlope or adxRisingRBS)
 
 // Candle close-location (0 = at low, 1 = at high)
 closeLoc = (rng > 0) ? ((close - low) / rng) : 0.5
-bearCloseNearLowOk = closeLoc <= bearShortCloseNearLo
+bearCloseNearLowOk =
+     closeLoc <= bearShortCloseNearLo and
+     (htfOnNow or closeLoc <= bearBD_Off_CloseLocMax)
 rbCloseNearLowOk   = closeLoc <= rbShortCloseNearLo
 
 
@@ -2209,9 +2211,11 @@ bool bearDistGateOk = (bearPB_age <= bearBreakDistBypassBars) or bearDistOk
 bool bearOffNow = (htfOnNow == false) and (not htfNeutral)
 bool bearBD_OffWeakCloseVeto = bearOffNow and (closeLoc > bearBD_Off_CloseLocMax)
 
+bearBD_OffVeto = bearBD_OffWeakCloseVeto or bearOffSqVeto
+
 bearShortBreakdownNow =
      bearActive and bearShortOn and (not inPos) and (bearPBSeen or bearFreshNoPBOk) and
-     (not bearBD_OffWeakCloseVeto) and
+     (not bearBD_OffVeto) and
      (adx >= bearAdxMin) and
      (close < bearBreakLvl) and (close < open) and (bodyPct >= bearMinBodyPct) and
      (close < bearBreakLB) and
