@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.20 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.21 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -259,6 +259,8 @@ bearBD_FreshMaxDistEFATR = input.float(3.6, "Bear breakdown (no-PB fresh): max |
 bearBreakDistBypassBars = input.int(4, "Bear breakdown: bypass EMA-distance filter if PB age <= N bars", group=grpBear, minval=0)
 bearBD_ChaseExh_RngAtrMin  = input.float(1.40, "Bear SHORT breakdown: veto if entry candle range/ATR >= X (exhaustion)", group=grpBear, step=0.05)
 bearBD_ChaseExh_DistEFMin  = input.float(2.20, "Bear SHORT breakdown: veto if dist-to-EMAfast/ATR >= X (chase)",      group=grpBear, step=0.05)
+bearBD_ChaseExh_ConfirmBars  = input.int(2, "Bear breakdown: if chase+exh, require N confirm closes", group=grpBear, minval=1, maxval=3)
+bearBD_ChaseExh_ConfirmLowLB = input.int(2, "Bear breakdown: confirm uses lowest(low, N) break",      group=grpBear, minval=1, maxval=5)
 
 // BEAR_S_ACCEPT liquidation-climax veto (blocks shorting the dump)
 bearAccClimax_RngAtrMin = input.float(1.80, "BEAR Accept Veto: Range/ATR ≥", step=0.05, group="Bear")
@@ -2210,13 +2212,26 @@ float bearMaxDistNow = bearFreshNoPBOk ? bearBD_FreshMaxDistEFATR : bearBreakMax
 bool bearDistOk = (atr <= 0) ? true : (math.abs(close - emaFast) / atr <= bearMaxDistNow)
 bool bearDistGateOk = (bearPB_age <= bearBreakDistBypassBars) or bearDistOk
 
-// Breakdown chase+exhaustion veto: only block when BOTH candle is huge AND entry is stretched from EMAfast
+// Breakdown chase+exhaustion: DO NOT hard-veto.
+// Instead, when chase+exh is true, require continuation confirmation (reduces collateral damage on winners).
 float _bdRangeAtr = (atr > 0) ? ((high - low) / atr) : 0.0
 float _bdDistEF   = (atr > 0) ? (math.abs(close - emaFast) / atr) : 0.0
 
-bool bearBD_ChaseExhVeto =
+bool bearBD_ChaseExh =
      (_bdRangeAtr >= bearBD_ChaseExh_RngAtrMin) and
      (_bdDistEF   >= bearBD_ChaseExh_DistEFMin)
+
+// “Confirm” = still closing below bearBreakLvl AND still breaking a short micro-low.
+// For 2-bar confirm, require the same on the previous confirmed bar.
+float _bdLowLB_now  = ta.lowest(low[1], bearBD_ChaseExh_ConfirmLowLB)
+float _bdLowLB_prev = ta.lowest(low[2], bearBD_ChaseExh_ConfirmLowLB)
+
+bool _bdConfNow  = (close < bearBreakLvl) and (close < _bdLowLB_now)
+bool _bdConfPrev = (close[1] < bearBreakLvl[1]) and (close[1] < _bdLowLB_prev)
+
+bool bearBD_ChaseExhOk =
+     (not bearBD_ChaseExh) or
+     (bearBD_ChaseExh_ConfirmBars == 1 ? _bdConfNow : (_bdConfNow and _bdConfPrev))
 
 bool bearOffNow = (htfOnNow == false) and (not htfNeutral)
 bool bearBD_OffWeakCloseVeto = bearOffNow and (closeLoc > bearBD_Off_CloseLocMax)
@@ -2226,7 +2241,7 @@ bearBD_OffVeto = bearBD_OffWeakCloseVeto or bearOffSqVeto
 bearShortBreakdownNow =
      bearActive and bearShortOn and (not inPos) and (bearPBSeen or bearFreshNoPBOk) and
      (not bearBD_OffVeto) and
-     (not bearBD_ChaseExhVeto) and
+     bearBD_ChaseExhOk and
      (adx >= bearAdxMin) and
      (close < bearBreakLvl) and (close < open) and (bodyPct >= bearMinBodyPct) and
      (close < bearBreakLB) and
