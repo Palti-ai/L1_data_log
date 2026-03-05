@@ -257,12 +257,13 @@ bearBreakMaxDistEFATR = input.float(2.6, "Bear breakdown: max |close-EMAfast| (A
 bearBD_FreshEndBarsMax   = input.int(16, "Bear breakdown (no-PB): max bars since END_BULL", group=grpBear, minval=1)
 bearBD_FreshMaxDistEFATR = input.float(3.6, "Bear breakdown (no-PB fresh): max |close-EMAfast| (ATR)", group=grpBear, step=0.1, minval=0.5)
 bearBreakDistBypassBars = input.int(4, "Bear breakdown: bypass EMA-distance filter if PB age <= N bars", group=grpBear, minval=0)
+
 // BEAR_S_ACCEPT liquidation-climax veto (blocks shorting the dump)
 bearAccClimax_RngAtrMin = input.float(1.80, "BEAR Accept Veto: Range/ATR ≥", step=0.05, group="Bear")
 bearAccClimax_BodyPctMin = input.float(0.65, "BEAR Accept Veto: BodyPct ≥", step=0.05, group="Bear")
 bearPB_MaxPop_ATR  = input.float(0.60, "Bear SHORT: retest max pop above bearBreakLvl (ATR*x)", group=grpBear, step=0.05)
 bearLvlHold_ATR    = input.float(0.10, "Bear SHORT: close hold allowance above bearBreakLvl (ATR*x)", group=grpBear, step=0.05)
-bearBD_Off_CloseLocMax = input.float(0.32, "Bear breakdown (HTF_OFF): max closeLoc (veto weak breakdown)", group=grpBear, step=0.01, minval=0.01, maxval=0.99)
+bearBD_Off_CloseLocMax = input.float(0.34, "Bear breakdown (HTF_OFF): max closeLoc (veto weak breakdown)", group=grpBear, step=0.01, minval=0.01, maxval=0.99)
 bearMinBodyPct     = input.float(0.20, "Bear SHORT: breakdown candle body/range >=", group=grpBear, step=0.05)
 bearBreakLookback  = input.int(9, "Bear SHORT: breakdown must break last N-bar low", group=grpBear, minval=3)
 
@@ -274,6 +275,11 @@ bearTS_MinMFE_ATR  = input.float(0.30, "Bear TS only if MFE < ATR*x", group=grpB
 bearAccOff_RngAtrMax      = input.float(2.00, "BEAR ACCEPT (HTF_OFF): Range/ATR <= X", group=grpBear, step=0.05)
 bearAccOff_CloseLocMin    = input.float(0.14, "BEAR ACCEPT (HTF_OFF): closeLoc >= X veto", group=grpBear, step=0.01, minval=0.01, maxval=0.60)
 bearAccOff_UseVeto        = input.bool(true, "BEAR ACCEPT (HTF_OFF): enable veto", group=grpBear)
+
+// --- HTF_OFF squeeze-risk veto (cross-coin): low-vol + overextended vs EMAfast ---
+bearOffSq_RngAtrMax       = input.float(1.10, "BEAR (HTF_OFF): squeeze veto if Range/ATR <= X", group=grpBear, step=0.05)
+bearOffSq_MaxDistEFATR    = input.float(3.00, "BEAR (HTF_OFF): squeeze veto if |close-EMAfast| >= X ATR", group=grpBear, step=0.10)
+bearOffSq_UseVeto         = input.bool(true, "BEAR (HTF_OFF): enable squeeze veto", group=grpBear)
 
 // --- Bear SHORT: TP1 + post-TP1 protection (runner-safe) ---
 bearTP1_ATR       = input.float(1.65, "Bear TP1 (ATR*x) — partial", group=grpBear, step=0.25)
@@ -1424,10 +1430,23 @@ bearAccClimaxFollowThroughOk =
      (low < bearAccClimaxRefLow)
 
 // HTF_OFF-only veto: block weak accept shorts in OFF regime (squeeze-risk chop)
-bearAccOffNow  = (not htfOnNow) and (not htfNeutral)   // matches your L1_pendHtfState logic: HTF_OFF when htfOnNow==false
-bearAccOffVeto = bearAccOff_UseVeto and bearAccOffNow and
+bearAccOffNow  = (not htfOnNow) and (not htfNeutral)
+
+// distEFATR = |close-EMAfast| / ATR  (same definition as your L1 distEFATR)
+bearOffSq_distEFATR = (atr > 0) ? math.abs(close - emaFast) / atr : na
+
+// Cross-coin squeeze veto (HTF_OFF only): low Range/ATR + huge EMA extension
+bearOffSqVeto = bearOffSq_UseVeto and bearAccOffNow and
+     (not na(bearRangeAtrLocal)) and (bearRangeAtrLocal <= bearOffSq_RngAtrMax) and
+     (not na(bearOffSq_distEFATR)) and (bearOffSq_distEFATR >= bearOffSq_MaxDistEFATR)
+
+// Original VIRTUAL-style accept veto (HTF_OFF only): low/mod Range/ATR + weak closeLoc
+bearAccOffWeakCloseVeto = bearAccOff_UseVeto and bearAccOffNow and
      (not na(bearRangeAtrLocal)) and (bearRangeAtrLocal <= bearAccOff_RngAtrMax) and
      (closeLoc >= bearAccOff_CloseLocMin)
+
+// Final accept veto = either squeeze veto OR weak-close veto
+bearAccOffVeto = bearOffSqVeto or bearAccOffWeakCloseVeto
 
 bearAcceptImpulseBase = barstate.isconfirmed and (not inPos) and bearShortOn and bearAcceptEntryOn and
      shortCooldownOk and bearShortADXOk and (adx >= bearShortADXMin) and
