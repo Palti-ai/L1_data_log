@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.19 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.20 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -257,6 +257,8 @@ bearBreakMaxDistEFATR = input.float(2.6, "Bear breakdown: max |close-EMAfast| (A
 bearBD_FreshEndBarsMax   = input.int(16, "Bear breakdown (no-PB): max bars since END_BULL", group=grpBear, minval=1)
 bearBD_FreshMaxDistEFATR = input.float(3.6, "Bear breakdown (no-PB fresh): max |close-EMAfast| (ATR)", group=grpBear, step=0.1, minval=0.5)
 bearBreakDistBypassBars = input.int(4, "Bear breakdown: bypass EMA-distance filter if PB age <= N bars", group=grpBear, minval=0)
+bearBD_ChaseExh_RngAtrMin  = input.float(1.40, "Bear SHORT breakdown: veto if entry candle range/ATR >= X (exhaustion)", group=grpBear, step=0.05)
+bearBD_ChaseExh_DistEFMin  = input.float(2.20, "Bear SHORT breakdown: veto if dist-to-EMAfast/ATR >= X (chase)",      group=grpBear, step=0.05)
 
 // BEAR_S_ACCEPT liquidation-climax veto (blocks shorting the dump)
 bearAccClimax_RngAtrMin = input.float(1.80, "BEAR Accept Veto: Range/ATR ≥", step=0.05, group="Bear")
@@ -2208,6 +2210,14 @@ float bearMaxDistNow = bearFreshNoPBOk ? bearBD_FreshMaxDistEFATR : bearBreakMax
 bool bearDistOk = (atr <= 0) ? true : (math.abs(close - emaFast) / atr <= bearMaxDistNow)
 bool bearDistGateOk = (bearPB_age <= bearBreakDistBypassBars) or bearDistOk
 
+// Breakdown chase+exhaustion veto: only block when BOTH candle is huge AND entry is stretched from EMAfast
+float _bdRangeAtr = (atr > 0) ? ((high - low) / atr) : 0.0
+float _bdDistEF   = (atr > 0) ? (math.abs(close - emaFast) / atr) : 0.0
+
+bool bearBD_ChaseExhVeto =
+     (_bdRangeAtr >= bearBD_ChaseExh_RngAtrMin) and
+     (_bdDistEF   >= bearBD_ChaseExh_DistEFMin)
+
 bool bearOffNow = (htfOnNow == false) and (not htfNeutral)
 bool bearBD_OffWeakCloseVeto = bearOffNow and (closeLoc > bearBD_Off_CloseLocMax)
 
@@ -2216,6 +2226,7 @@ bearBD_OffVeto = bearBD_OffWeakCloseVeto or bearOffSqVeto
 bearShortBreakdownNow =
      bearActive and bearShortOn and (not inPos) and (bearPBSeen or bearFreshNoPBOk) and
      (not bearBD_OffVeto) and
+     (not bearBD_ChaseExhVeto) and
      (adx >= bearAdxMin) and
      (close < bearBreakLvl) and (close < open) and (bodyPct >= bearMinBodyPct) and
      (close < bearBreakLB) and
