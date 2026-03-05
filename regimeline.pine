@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.15 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.16 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -269,6 +269,11 @@ bearBreakLookback  = input.int(9, "Bear SHORT: breakdown must break last N-bar l
 bearArmMaxBars     = input.int(14, "Bear SHORT: expire retest in N bars", group=grpBear, minval=3)
 bearTS_Bars        = input.int(24, "Bear SHORT time-stop bars", group=grpBear, minval=5)
 bearTS_MinMFE_ATR  = input.float(0.30, "Bear TS only if MFE < ATR*x", group=grpBear, step=0.05)
+
+// --- BEAR_S_ACCEPT: ONLY veto low-vol weak accepts when HTF is OFF ---
+bearAccOff_RngAtrMax      = input.float(2.00, "BEAR ACCEPT (HTF_OFF): Range/ATR <= X", group=grpBear, step=0.05)
+bearAccOff_CloseLocMin    = input.float(0.14, "BEAR ACCEPT (HTF_OFF): closeLoc >= X veto", group=grpBear, step=0.01, minval=0.01, maxval=0.60)
+bearAccOff_UseVeto        = input.bool(true, "BEAR ACCEPT (HTF_OFF): enable veto", group=grpBear)
 
 // --- Bear SHORT: TP1 + post-TP1 protection (runner-safe) ---
 bearTP1_ATR       = input.float(1.65, "Bear TP1 (ATR*x) — partial", group=grpBear, step=0.25)
@@ -1417,12 +1422,20 @@ bearAcceptVetoWeakWickPrev = (not na(adx[1])) and (not na(bodyPct[1])) and (adx[
 bearAccClimaxFollowThroughOk =
      bearAccClimaxPend and not na(bearAccClimaxBar) and (bar_index == bearAccClimaxBar + 1) and
      (low < bearAccClimaxRefLow)
-bearAcceptImpulseBase =
-     barstate.isconfirmed and (not inPos) and bearShortOn and bearAcceptEntryOn and
+
+// HTF_OFF-only veto: block weak accept shorts in OFF regime (squeeze-risk chop)
+bearAccOffNow  = (not htfOnNow) and (not htfNeutral)   // matches your L1_pendHtfState logic: HTF_OFF when htfOnNow==false
+bearAccOffVeto = bearAccOff_UseVeto and bearAccOffNow and
+     (not na(bearRangeAtrLocal)) and (bearRangeAtrLocal <= bearAccOff_RngAtrMax) and
+     (closeLoc >= bearAccOff_CloseLocMin)
+
+bearAcceptImpulseBase = barstate.isconfirmed and (not inPos) and bearShortOn and bearAcceptEntryOn and
      shortCooldownOk and bearShortADXOk and (adx >= bearShortADXMin) and
      (close < bearBreakLvl) and (close < open) and
      (bodyPct >= bearMinBodyPct) and bearCloseNearLowOk and
-     (not bearAcceptVetoLowAdx)
+     (not bearAcceptVetoLowAdx) and
+     (not bearAccOffVeto)
+
 bearAcceptImpulseEnter =
      bearAcceptImpulseBase and (
         // normal: enter on acceptance bar
@@ -4648,7 +4661,7 @@ if exitOk and inPos
         // 0a) BEAR breakdown reclaim invalidation (EARLY) — kill failed breakdown shorts on close-based reclaim
     bool bearReclaimExitNow = false
 
-    if barstate.isconfirmed and inPos and isShort and (posTag == "BEAR") and bearExitUseReclaim and (bearEntryArch == 0)
+    if barstate.isconfirmed and inPos and isShort and (posTag == "BEAR") and bearExitUseReclaim
         bool reclaimLvlHit = (not na(bearReclLvlPos)) and (close > bearReclLvlPos)
         bool emaReclaimHit = bearExitUseEmaReclaim and (not na(bearEmaFastPos)) and (close > bearEmaFastPos)
         bool reclaimNow = reclaimLvlHit or emaReclaimHit
