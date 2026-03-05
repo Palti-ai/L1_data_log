@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.16 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.17 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -262,7 +262,7 @@ bearAccClimax_RngAtrMin = input.float(1.80, "BEAR Accept Veto: Range/ATR ≥", s
 bearAccClimax_BodyPctMin = input.float(0.65, "BEAR Accept Veto: BodyPct ≥", step=0.05, group="Bear")
 bearPB_MaxPop_ATR  = input.float(0.60, "Bear SHORT: retest max pop above bearBreakLvl (ATR*x)", group=grpBear, step=0.05)
 bearLvlHold_ATR    = input.float(0.10, "Bear SHORT: close hold allowance above bearBreakLvl (ATR*x)", group=grpBear, step=0.05)
-
+bearBD_Off_CloseLocMax = input.float(0.32, "Bear breakdown (HTF_OFF): max closeLoc (veto weak breakdown)", group=grpBear, step=0.01, minval=0.01, maxval=0.99)
 bearMinBodyPct     = input.float(0.20, "Bear SHORT: breakdown candle body/range >=", group=grpBear, step=0.05)
 bearBreakLookback  = input.int(9, "Bear SHORT: breakdown must break last N-bar low", group=grpBear, minval=3)
 
@@ -2187,8 +2187,12 @@ float bearMaxDistNow = bearFreshNoPBOk ? bearBD_FreshMaxDistEFATR : bearBreakMax
 bool bearDistOk = (atr <= 0) ? true : (math.abs(close - emaFast) / atr <= bearMaxDistNow)
 bool bearDistGateOk = (bearPB_age <= bearBreakDistBypassBars) or bearDistOk
 
+bool bearOffNow = (htfOnNow == false) and (not htfNeutral)
+bool bearBD_OffWeakCloseVeto = bearOffNow and (closeLoc > bearBD_Off_CloseLocMax)
+
 bearShortBreakdownNow =
      bearActive and bearShortOn and (not inPos) and (bearPBSeen or bearFreshNoPBOk) and
+     (not bearBD_OffWeakCloseVeto) and
      (adx >= bearAdxMin) and
      (close < bearBreakLvl) and (close < open) and (bodyPct >= bearMinBodyPct) and
      (close < bearBreakLB) and
