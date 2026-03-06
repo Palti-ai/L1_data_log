@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.26 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.27 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -262,6 +262,10 @@ bearBD_ChaseExh_RngAtrMin  = input.float(1.40, "Bear SHORT breakdown: veto if en
 bearBD_ChaseExh_DistEFMin  = input.float(2.20, "Bear SHORT breakdown: veto if dist-to-EMAfast/ATR >= X (chase)",      group=grpBear, step=0.05)
 bearBD_ChaseExh_ConfirmBars  = input.int(2, "Bear breakdown: if chase+exh, require N confirm closes", group=grpBear, minval=1, maxval=3)
 bearBD_ChaseExh_ConfirmLowLB = input.int(2, "Bear breakdown: confirm uses lowest(low, N) break",      group=grpBear, minval=1, maxval=5)
+bearBD_WeakDriftOn         = input.bool(true,  "Bear weak-drift veto", group=grpBear)
+bearBD_WeakDrift_RngAtrMax = input.float(0.50, "Bear weak-drift: max range ATR", group=grpBear, step=0.05)
+bearBD_WeakDrift_DistEFMin = input.float(1.90, "Bear weak-drift: min dist EF ATR", group=grpBear, step=0.05)
+bearBD_WeakDrift_BodyPctMax= input.float(0.55, "Bear weak-drift: max body %", group=grpBear, step=0.05)
 
 // BEAR_S_ACCEPT liquidation-climax veto (blocks shorting the dump)
 bearAccClimax_RngAtrMin = input.float(1.40, "BEAR Accept Veto: Range/ATR ≥", step=0.05, group="Bear")
@@ -2234,6 +2238,13 @@ bool bearBD_ChaseExh =
      (_bdRangeAtr >= bearBD_ChaseExh_RngAtrMin) and
      (_bdDistEF   >= bearBD_ChaseExh_DistEFMin)
 
+// Weak drift-breakdown veto: tiny range + already stretched from EMA + only mediocre body
+bool bearBD_WeakDriftVeto =
+     bearBD_WeakDriftOn and
+     (_bdRangeAtr < bearBD_WeakDrift_RngAtrMax) and
+     (_bdDistEF   > bearBD_WeakDrift_DistEFMin) and
+     (bodyPct     < bearBD_WeakDrift_BodyPctMax)
+
 // “Confirm” = still closing below bearBreakLvl AND still breaking a short micro-low.
 // For 2-bar confirm, require the same on the previous confirmed bar.
 float _bdLowLB_now  = ta.lowest(low[1], bearBD_ChaseExh_ConfirmLowLB)
@@ -2258,6 +2269,7 @@ bearBD_OffVeto = bearBD_OffWeakCloseVeto or bearBD_OffHiAdxWeakCloseVeto or bear
 bearShortBreakdownNow =
      bearActive and bearShortOn and (not inPos) and (bearPBSeen or bearFreshNoPBOk) and
      (not bearBD_OffVeto) and
+     (not bearBD_WeakDriftVeto) and
      bearBD_ChaseExhOk and
      (adx >= bearAdxMin) and
      (close < bearBreakLvl) and (close < open) and (bodyPct >= bearMinBodyPct) and
