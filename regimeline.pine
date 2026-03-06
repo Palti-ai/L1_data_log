@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.23 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.24 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -250,6 +250,7 @@ bearShortUseSlope    = input.bool(true, "Bear SHORT: require ADX rising", group=
 bearShortSlopeBars   = input.int(3, "Bear SHORT: ADX rising over N bars", group=grpBear, minval=1)
 bearShortCloseNearLo = input.float(0.35, "Bear SHORT: close must be in bottom X of range", group=grpBear, step=0.05)
 bearAcceptEntryOn = input.bool(true, "Bear: allow entry on acceptance-down (no retest)", group=grpBear)
+
 bearExitUseReclaim = input.bool(true,  "Bear short: exit on LTF reclaim (pre HTF-BULL-KILL)", group=grpBear)
 bearExitReclaimBars = input.int(2,     "Bear short: reclaim closes needed",                  group=grpBear, minval=1)
 bearExitUseEmaReclaim = input.bool(true, "Bear short: EMAfast reclaim counts as reclaim",    group=grpBear)
@@ -1459,8 +1460,10 @@ bearAccOffWeakCloseVeto = bearAccOff_UseVeto and bearAccOffNow and
      (not na(bearRangeAtrLocal)) and (bearRangeAtrLocal <= bearAccOff_RngAtrMax) and
      (closeLoc >= bearAccOff_CloseLocMin)
 
+bearAccOffThinRangeVeto = bearAccOffNow and (not na(bearRangeAtrLocal)) and (bearRangeAtrLocal <= 0.60)
+
 // Final accept veto = either squeeze veto OR weak-close veto
-bearAccOffVeto = bearOffSqVeto or bearOffSqVeto2 or bearAccOffWeakCloseVeto
+bearAccOffVeto = bearOffSqVeto or bearOffSqVeto2 or bearAccOffWeakCloseVeto or bearAccOffThinRangeVeto
 
 bearAcceptImpulseBase = barstate.isconfirmed and (not inPos) and bearShortOn and bearAcceptEntryOn and
      shortCooldownOk and bearShortADXOk and (adx >= bearShortADXMin) and
