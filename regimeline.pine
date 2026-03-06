@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.25 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.26 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -269,6 +269,8 @@ bearAccClimax_BodyPctMin = input.float(0.65, "BEAR Accept Veto: BodyPct ≥", st
 bearPB_MaxPop_ATR  = input.float(0.60, "Bear SHORT: retest max pop above bearBreakLvl (ATR*x)", group=grpBear, step=0.05)
 bearLvlHold_ATR    = input.float(0.10, "Bear SHORT: close hold allowance above bearBreakLvl (ATR*x)", group=grpBear, step=0.05)
 bearBD_Off_CloseLocMax = input.float(0.34, "Bear breakdown (HTF_OFF): max closeLoc (veto weak breakdown)", group=grpBear, step=0.01, minval=0.01, maxval=0.99)
+bearBD_Off_HiAdxMin = input.float(50.0, "Bear breakdown (HTF_OFF): high-ADX weak-close veto if ADX >= X", group=grpBear, step=1.0, minval=1.0)
+bearBD_Off_HiAdx_CloseLocMax = input.float(0.20, "Bear breakdown (HTF_OFF): high-ADX weak-close veto if closeLoc > X", group=grpBear, step=0.01, minval=0.01, maxval=0.99)
 bearMinBodyPct     = input.float(0.20, "Bear SHORT: breakdown candle body/range >=", group=grpBear, step=0.05)
 bearBreakLookback  = input.int(9, "Bear SHORT: breakdown must break last N-bar low", group=grpBear, minval=3)
 
@@ -2246,8 +2248,12 @@ bool bearBD_ChaseExhOk =
 
 bool bearOffNow = (htfOnNow == false) and (not htfNeutral)
 bool bearBD_OffWeakCloseVeto = bearOffNow and (closeLoc > bearBD_Off_CloseLocMax)
+bool bearBD_OffHiAdxWeakCloseVeto =
+     bearOffNow and
+     (adx >= bearBD_Off_HiAdxMin) and
+     (closeLoc > bearBD_Off_HiAdx_CloseLocMax)
 
-bearBD_OffVeto = bearBD_OffWeakCloseVeto or bearOffSqVeto
+bearBD_OffVeto = bearBD_OffWeakCloseVeto or bearBD_OffHiAdxWeakCloseVeto or bearOffSqVeto
 
 bearShortBreakdownNow =
      bearActive and bearShortOn and (not inPos) and (bearPBSeen or bearFreshNoPBOk) and
