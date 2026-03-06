@@ -14,7 +14,7 @@ strategy(STRAT_TITLE,
      commission_value=0.1,
      slippage=2,
      calc_on_every_tick = true,
-     process_orders_on_close = true,
+     process_orders_on_close = false,
      max_labels_count=500)
 
 //====================================================
@@ -274,8 +274,6 @@ bearBreakLookback  = input.int(9, "Bear SHORT: breakdown must break last N-bar l
 bearArmMaxBars     = input.int(14, "Bear SHORT: expire retest in N bars", group=grpBear, minval=3)
 bearTS_Bars        = input.int(24, "Bear SHORT time-stop bars", group=grpBear, minval=5)
 bearTS_MinMFE_ATR  = input.float(0.30, "Bear TS only if MFE < ATR*x", group=grpBear, step=0.05)
-bearReclaimExit_Use        = input.bool(true,  "BEAR: reclaim exit (2x close > EMAfast) if no progress", group="BEAR")
-bearReclaimExit_MinMFE_ATR = input.float(0.20, "BEAR: reclaim exit only if MFE < X ATR", group="BEAR", minval=0.0, step=0.05)
 
 // --- BEAR_S_ACCEPT: ONLY veto low-vol weak accepts when HTF is OFF ---
 bearAccOff_RngAtrMax      = input.float(2.00, "BEAR ACCEPT (HTF_OFF): Range/ATR <= X", group=grpBear, step=0.05)
@@ -4133,19 +4131,7 @@ bool bearTP0ProofDue = inPos and posTag=="BEAR" and bearTP0Done and (not bearTP1
 bool bearTP0NoExtExit = bearTP0ProofDue and (bearTP0AddExtPct < bearTP0ProofExtPct)
 
 bearBarsIn = (inPos and posTag=="BEAR" and not na(lastEntryBar)) ? (bar_index - lastEntryBar) : 0
-
-var int bearReclaimCloses = 0
-
-bool bearReclaimNow = inPos and (posTag == "BEAR") and barstate.isconfirmed and (close > emaFast)
-
-if not (inPos and posTag == "BEAR")
-    bearReclaimCloses := 0
-else
-    bearReclaimCloses := bearReclaimNow ? math.min(bearReclaimCloses + 1, 10) : 0
-
 bearTimeStop = inPos and posTag=="BEAR" and (bearBarsIn >= bearTS_Bars) and (bearMFE < atr * bearTS_MinMFE_ATR)
-
-bearReclaimExit = bearReclaimExit_Use and inPos and (posTag == "BEAR") and (bearReclaimCloses >= 2) and (bearMFE < atr * bearReclaimExit_MinMFE_ATR)
 
 // RB SHORT time-stop (must pay quickly)
 rbSMFE = (inPos and posTag=="RANGEB" and isShort) ? (strategy.position_avg_price - tradeLo) : 0.0
@@ -4241,11 +4227,6 @@ if exitOk and inPos
         doExit := true
         exitReason := "RA_TS"
         exitReg := "RANGE-A"
-
-    if (not doExit) and bearReclaimExit
-        doExit := true
-        exitReason := "BEAR_RECLAIM_EXIT"
-        exitReg := "BEAR"
 
     if (not doExit) and bearTimeStop
         doExit := true
