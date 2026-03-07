@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.27 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.28 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -266,6 +266,10 @@ bearBD_WeakDriftOn         = input.bool(true,  "Bear weak-drift veto", group=grp
 bearBD_WeakDrift_RngAtrMax = input.float(0.50, "Bear weak-drift: max range ATR", group=grpBear, step=0.05)
 bearBD_WeakDrift_DistEFMin = input.float(1.90, "Bear weak-drift: min dist EF ATR", group=grpBear, step=0.05)
 bearBD_WeakDrift_BodyPctMax= input.float(0.55, "Bear weak-drift: max body %", group=grpBear, step=0.05)
+bearBD_WeakDriftStrongOn         = input.bool(true,  "Bear weak-drift strong-body veto", group=grpBear)
+bearBD_WeakDriftStrong_RngAtrMax = input.float(1.45, "Bear weak-drift strong-body: max range ATR", group=grpBear, step=0.05)
+bearBD_WeakDriftStrong_DistEFMin = input.float(2.45, "Bear weak-drift strong-body: min dist EF ATR", group=grpBear, step=0.05)
+bearBD_WeakDriftStrong_AdxMin    = input.float(30.0, "Bear weak-drift strong-body: min ADX", group=grpBear, step=0.5)
 
 // BEAR_S_ACCEPT liquidation-climax veto (blocks shorting the dump)
 bearAccClimax_RngAtrMin = input.float(1.40, "BEAR Accept Veto: Range/ATR ≥", step=0.05, group="Bear")
@@ -2238,12 +2242,18 @@ bool bearBD_ChaseExh =
      (_bdRangeAtr >= bearBD_ChaseExh_RngAtrMin) and
      (_bdDistEF   >= bearBD_ChaseExh_DistEFMin)
 
-// Weak drift-breakdown veto: tiny range + already stretched from EMA + only mediocre body
+// Weak drift-breakdown veto:
+// (A) original tiny-range + stretched + mediocre-body case
+// (B) strong-body but still stretched/non-expansive late breakdown case
 bool bearBD_WeakDriftVeto =
-     bearBD_WeakDriftOn and
-     (_bdRangeAtr < bearBD_WeakDrift_RngAtrMax) and
-     (_bdDistEF   > bearBD_WeakDrift_DistEFMin) and
-     (bodyPct     < bearBD_WeakDrift_BodyPctMax)
+      (bearBD_WeakDriftOn and
+      (_bdRangeAtr < bearBD_WeakDrift_RngAtrMax) and
+      (_bdDistEF   > bearBD_WeakDrift_DistEFMin) and
+      (bodyPct     < bearBD_WeakDrift_BodyPctMax)) or
+      (bearBD_WeakDriftStrongOn and
+      (_bdRangeAtr < bearBD_WeakDriftStrong_RngAtrMax) and
+      (_bdDistEF   > bearBD_WeakDriftStrong_DistEFMin) and
+      (adx         >= bearBD_WeakDriftStrong_AdxMin))
 
 // “Confirm” = still closing below bearBreakLvl AND still breaking a short micro-low.
 // For 2-bar confirm, require the same on the previous confirmed bar.
