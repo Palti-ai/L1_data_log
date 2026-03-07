@@ -4750,15 +4750,15 @@ xRaTs    := false
 // Must sit OUTSIDE exitOk so failed breakdown shorts are closed immediately
 bool bearReclaimExitNow = false
 bool bearBreakdownShort =
-     inPos and isShort and (posTag == "BEAR") and (bearEntryArch == 0)
+     inPos and isShort and (posTag == "BEAR")
 
-if barstate.isconfirmed and bearBreakdownShort and bearExitUseReclaim
+if barstate.isconfirmed and bearBreakdownShort
     bool reclaimLvlHit = (not na(bearReclLvlPos)) and (close > bearReclLvlPos)
-    bool emaReclaimHit = bearExitUseEmaReclaim and (close > emaFast)
+    bool emaReclaimHit = (close > emaFast)
     bool reclaimNow = reclaimLvlHit or emaReclaimHit
 
     bearReclaimCloseCnt := reclaimNow ? (bearReclaimCloseCnt + 1) : 0
-    bearReclaimExitNow := bearReclaimCloseCnt >= bearExitReclaimBars
+    bearReclaimExitNow := bearReclaimCloseCnt >= 2
 else
     bearReclaimCloseCnt := 0
 
