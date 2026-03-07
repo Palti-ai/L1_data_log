@@ -4754,7 +4754,7 @@ bool bearBreakdownShort =
 
 if barstate.isconfirmed and bearBreakdownShort and bearExitUseReclaim
     bool reclaimLvlHit = (not na(bearReclLvlPos)) and (close > bearReclLvlPos)
-    bool emaReclaimHit = bearExitUseEmaReclaim and (not na(bearEmaFastPos)) and (close > bearEmaFastPos)
+    bool emaReclaimHit = bearExitUseEmaReclaim and (close > emaFast)
     bool reclaimNow = reclaimLvlHit or emaReclaimHit
 
     bearReclaimCloseCnt := reclaimNow ? (bearReclaimCloseCnt + 1) : 0
