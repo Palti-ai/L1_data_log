@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.35 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.37 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -286,8 +286,7 @@ bearArmMaxBars     = input.int(14, "Bear SHORT: expire retest in N bars", group=
 bearTS_Bars        = input.int(24, "Bear SHORT time-stop bars", group=grpBear, minval=5)
 bearTS_MinMFE_ATR  = input.float(0.30, "Bear TS only if MFE < ATR*x", group=grpBear, step=0.05)
 bearBD_FailExitBars = input.int(30, "Bear breakdown fail exit bars", group=grpBear, minval=5)
-bearBD_FailReclaimCloses = input.int(3, "Bear breakdown fail: consecutive closes above EMA fast", group=grpBear, minval=1)
-bearBD_FailMinESATR = input.float(3.60, "Bear breakdown fail: entry |close-EMA slow| / ATR >=", group=grpBear, step=0.05)
+bearBD_FailReclaimCloses = input.int(1, "Bear breakdown fail: closes above reclaim level", group=grpBear, minval=1)
 
 // --- BEAR_S_ACCEPT: ONLY veto low-vol weak accepts when HTF is OFF ---
 bearAccOff_RngAtrMax      = input.float(2.00, "BEAR ACCEPT (HTF_OFF): Range/ATR <= X", group=grpBear, step=0.05)
@@ -4175,10 +4174,14 @@ bearBarsIn = (inPos and posTag=="BEAR" and not na(lastEntryBar)) ? (bar_index - 
 bearTimeStop = inPos and posTag=="BEAR" and (bearBarsIn >= bearTS_Bars) and (bearMFE < atr * bearTS_MinMFE_ATR)
 
 if barstate.isconfirmed
-    if inPos and (posTag == "BEAR") and (not bearTP0Done) and (close > emaFast)
-        bearBD_FailCloseCnt := nz(bearBD_FailCloseCnt) + 1
-    else
-        bearBD_FailCloseCnt := 0
+    bool bearBD_ReclaimNow =
+         inPos and
+         (posTag == "BEAR") and
+         (not bearTP0Done) and
+         (not na(bearReclLvlPos)) and
+         (close > bearReclLvlPos)
+
+    bearBD_FailCloseCnt := bearBD_ReclaimNow ? 1 : 0
 
 bearBreakdownFailExit = (
     inPos and
@@ -4186,9 +4189,8 @@ bearBreakdownFailExit = (
     (bearEntryArch == 0) and                 // breakdown only
     (not bearTP0Done) and
     (bearBarsIn >= bearBD_FailExitBars) and
-    (bearBD_FailCloseCnt >= bearBD_FailReclaimCloses) and
-    (not na(bearDistESATRPos)) and
-    (bearDistESATRPos >= bearBD_FailMinESATR)
+    (bearMFE < atr * bearTS_MinMFE_ATR) and
+    (bearBD_FailCloseCnt >= 1)
 )
 
 // RB SHORT time-stop (must pay quickly)
