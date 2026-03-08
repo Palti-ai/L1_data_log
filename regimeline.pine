@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.38 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.28 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -270,7 +270,6 @@ bearBD_WeakDriftStrongOn         = input.bool(true,  "Bear weak-drift strong-bod
 bearBD_WeakDriftStrong_RngAtrMax = input.float(1.45, "Bear weak-drift strong-body: max range ATR", group=grpBear, step=0.05)
 bearBD_WeakDriftStrong_DistEFMin = input.float(2.45, "Bear weak-drift strong-body: min dist EF ATR", group=grpBear, step=0.05)
 bearBD_WeakDriftStrong_AdxMin    = input.float(30.0, "Bear weak-drift strong-body: min ADX", group=grpBear, step=0.5)
-bearBD_FailMinESATR = input.float(3.60, "Bear breakdown fail: entry |close-EMA slow| / ATR >=", group=grpBear, step=0.05)
 
 // BEAR_S_ACCEPT liquidation-climax veto (blocks shorting the dump)
 bearAccClimax_RngAtrMin = input.float(1.40, "BEAR Accept Veto: Range/ATR ≥", step=0.05, group="Bear")
@@ -286,8 +285,6 @@ bearBreakLookback  = input.int(9, "Bear SHORT: breakdown must break last N-bar l
 bearArmMaxBars     = input.int(14, "Bear SHORT: expire retest in N bars", group=grpBear, minval=3)
 bearTS_Bars        = input.int(24, "Bear SHORT time-stop bars", group=grpBear, minval=5)
 bearTS_MinMFE_ATR  = input.float(0.30, "Bear TS only if MFE < ATR*x", group=grpBear, step=0.05)
-bearBD_FailExitBars = input.int(30, "Bear breakdown fail exit bars", group=grpBear, minval=5)
-bearBD_FailReclaimCloses = input.int(1, "Bear breakdown fail: closes above reclaim level", group=grpBear, minval=1)
 
 // --- BEAR_S_ACCEPT: ONLY veto low-vol weak accepts when HTF is OFF ---
 bearAccOff_RngAtrMax      = input.float(2.00, "BEAR ACCEPT (HTF_OFF): Range/ATR <= X", group=grpBear, step=0.05)
@@ -313,8 +310,6 @@ bearProtBuf_ATR   = input.float(0.10, "Bear post-TP1 protect: stop above entry (
 bearProtNeed2Cl   = input.bool(true, "Bear post-TP1 protect: require 2 closes", group=grpBear)
 bearTrailOn       = input.bool(true,  "Bear post-TP1: enable EMA trail (runner)", group=grpBear)
 bearTrailBuf_ATR  = input.float(0.25, "Bear post-TP1: EMA trail buffer (ATR*x)",  group=grpBear, step=0.05)
-bearTP0ProofWinBars = input.int(2, "Bear TP0 proof window (bars)", group=grpBear, minval=1)
-bearTP0ProofExtPct = input.float(0.30, "Bear TP0 proof extension %", group=grpBear, step=0.05)
 
 bearInvNeed2Cl     = input.bool(true, "Bear SHORT invalidation: require 2 closes above bearReclLvl", group=grpBear)
 bearAdxMin        = input.float(20, "Bear SHORT: require ADX >=", group=grpBear, step=0.5)
@@ -643,7 +638,6 @@ var int   lastBearShortExitBar = na   // Change 2: re-entry throttle
 var int bearEntryArch = na
 var float bearReclLvlPos = na
 var float bearEmaFastPos = na
-var float bearDistESATRPos = na
 //====================================================
 // BEAR diagnostics masks (LOG ONLY; no behavior impact)
 // allowMask: which “good” gates were true
@@ -662,7 +656,6 @@ bearVetoMaskNow += (htfOnNow) ? 4 : 0
 bearVetoMaskNow += (not (pendingBear or bearActive)) ? 8 : 0
 
 var int bearReclaimCloseCnt = 0
-var int bearBD_FailCloseCnt = 0
 var int   lastRBShortExitBar = na
 
 // ---- RB SHORT execution latch (Commit S2)
@@ -3044,8 +3037,7 @@ if bearShortEnter
     entryModeTag := "BEAR"
     bearEntryArch := bearEnterAccept ? 1 : 0   // 1=accept, 0=breakdown
     bearReclLvlPos := bearReclLvl
-    bearEmaFastPos := emaFast
-    bearDistESATRPos := (atr > 0 ? math.abs(close - emaSlow) / atr : na)    
+    bearEmaFastPos := emaFast    
 // L1 pending entry (committed on actual fill)
     L1_pendDir  := "SHORT"
     L1_pendReg  := "BEAR"
@@ -4018,10 +4010,6 @@ if not inPos
     bearReclLvlPos := na
 if not inPos
     bearEmaFastPos := na
-if not inPos
-    bearDistESATRPos := na
-if not inPos 
-    bearBD_FailCloseCnt := 0
 
 //====================================================
 // Bull TP0 partial (early de-risk; mirrors BEAR_TP0)
@@ -4167,23 +4155,14 @@ raTimeStop = inPos and posTag=="RANGEA" and (raBarsIn >= raTS_Bars)
 bearMFE = (inPos and posTag=="BEAR") ? (strategy.position_avg_price - tradeLo) : 0.0
 
 // ---- BEAR post-TP0 proof window (remainder-only) ----
+int bearTP0ProofWinBars = 2
+float bearTP0ProofExtPct = 0.30
 float bearTP0AddExtPct = (inPos and posTag=="BEAR" and bearTP0Done and not na(bearTP0Bar) and not na(bearTP0Lo) and not na(bearTP0EntryPx) and bearTP0EntryPx > 0) ? ((bearTP0Lo - tradeLo) / bearTP0EntryPx) * 100.0 : 0.0
 bool bearTP0ProofDue = inPos and posTag=="BEAR" and bearTP0Done and (not bearTP1Done) and (not na(bearTP0Bar)) and (bar_index >= (bearTP0Bar + bearTP0ProofWinBars))
 bool bearTP0NoExtExit = bearTP0ProofDue and (bearTP0AddExtPct < bearTP0ProofExtPct)
 
 bearBarsIn = (inPos and posTag=="BEAR" and not na(lastEntryBar)) ? (bar_index - lastEntryBar) : 0
 bearTimeStop = inPos and posTag=="BEAR" and (bearBarsIn >= bearTS_Bars) and (bearMFE < atr * bearTS_MinMFE_ATR)
-
-
-bearBreakdownFailExit = (
-    inPos and
-    (posTag == "BEAR") and
-    (bearEntryArch == 0) and                 // breakdown only
-    (not bearTP0Done) and
-    (bearBarsIn >= bearBD_FailExitBars) and
-    (not na(bearDistESATRPos)) and
-    (bearDistESATRPos >= bearBD_FailMinESATR)
-)
 
 // RB SHORT time-stop (must pay quickly)
 rbSMFE = (inPos and posTag=="RANGEB" and isShort) ? (strategy.position_avg_price - tradeLo) : 0.0
@@ -4279,11 +4258,6 @@ if exitOk and inPos
         doExit := true
         exitReason := "RA_TS"
         exitReg := "RANGE-A"
-
-    if (not doExit) and bearBreakdownFailExit
-        doExit := true
-        exitReason := "BEAR-BD-FAIL"
-        exitReg := "BEAR"
 
     if (not doExit) and bearTimeStop
         doExit := true
@@ -5015,7 +4989,7 @@ if exitOk and inPos
         pendingReset := true
         forcedUntilBar := na
 
-    // 5.9) Bear SHORT time-stop
+    // 5.8) Bear SHORT time-stop
     else if bearTimeStop
         strategy.close("SHORT", comment="BEAR-TS")
         // temp tuple unpack
