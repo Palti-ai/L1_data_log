@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.37 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.38 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -270,6 +270,7 @@ bearBD_WeakDriftStrongOn         = input.bool(true,  "Bear weak-drift strong-bod
 bearBD_WeakDriftStrong_RngAtrMax = input.float(1.45, "Bear weak-drift strong-body: max range ATR", group=grpBear, step=0.05)
 bearBD_WeakDriftStrong_DistEFMin = input.float(2.45, "Bear weak-drift strong-body: min dist EF ATR", group=grpBear, step=0.05)
 bearBD_WeakDriftStrong_AdxMin    = input.float(30.0, "Bear weak-drift strong-body: min ADX", group=grpBear, step=0.5)
+bearBD_FailMinESATR = input.float(3.60, "Bear breakdown fail: entry |close-EMA slow| / ATR >=", group=grpBear, step=0.05)
 
 // BEAR_S_ACCEPT liquidation-climax veto (blocks shorting the dump)
 bearAccClimax_RngAtrMin = input.float(1.40, "BEAR Accept Veto: Range/ATR ≥", step=0.05, group="Bear")
@@ -4173,15 +4174,6 @@ bool bearTP0NoExtExit = bearTP0ProofDue and (bearTP0AddExtPct < bearTP0ProofExtP
 bearBarsIn = (inPos and posTag=="BEAR" and not na(lastEntryBar)) ? (bar_index - lastEntryBar) : 0
 bearTimeStop = inPos and posTag=="BEAR" and (bearBarsIn >= bearTS_Bars) and (bearMFE < atr * bearTS_MinMFE_ATR)
 
-if barstate.isconfirmed
-    bool bearBD_ReclaimNow =
-         inPos and
-         (posTag == "BEAR") and
-         (not bearTP0Done) and
-         (not na(bearReclLvlPos)) and
-         (close > bearReclLvlPos)
-
-    bearBD_FailCloseCnt := bearBD_ReclaimNow ? 1 : 0
 
 bearBreakdownFailExit = (
     inPos and
@@ -4189,8 +4181,8 @@ bearBreakdownFailExit = (
     (bearEntryArch == 0) and                 // breakdown only
     (not bearTP0Done) and
     (bearBarsIn >= bearBD_FailExitBars) and
-    (bearMFE < atr * bearTS_MinMFE_ATR) and
-    (bearBD_FailCloseCnt >= 1)
+    (not na(bearDistESATRPos)) and
+    (bearDistESATRPos >= bearBD_FailMinESATR)
 )
 
 // RB SHORT time-stop (must pay quickly)
