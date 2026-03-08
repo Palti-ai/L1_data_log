@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.28 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.29 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -255,6 +255,10 @@ bearExitUseReclaim = input.bool(true,  "Bear short: exit on LTF reclaim (pre HTF
 bearExitReclaimBars = input.int(2,     "Bear short: reclaim closes needed",                  group=grpBear, minval=1)
 bearExitUseEmaReclaim = input.bool(true, "Bear short: EMAfast reclaim counts as reclaim",    group=grpBear)
 bearBreakMaxDistEFATR = input.float(2.6, "Bear breakdown: max |close-EMAfast| (ATR)", group=grpBear, step=0.1, minval=0.1)
+bearBD_FailExitOn       = input.bool(true, "Bear breakdown: early fail exit on reclaim pulses", group=grpBear)
+bearBD_FailWinBars      = input.int(20, "Bear breakdown: early-fail window bars", group=grpBear, minval=1)
+bearBD_FailPulseHits    = input.int(2, "Bear breakdown: reclaim pulses to fail", group=grpBear, minval=1, maxval=10)
+bearBD_FailNeedEMA      = input.bool(true, "Bear breakdown: reclaim pulse must also close above EMAfast", group=grpBear)
 bearBD_FreshEndBarsMax   = input.int(16, "Bear breakdown (no-PB): max bars since END_BULL", group=grpBear, minval=1)
 bearBD_FreshMaxDistEFATR = input.float(3.6, "Bear breakdown (no-PB fresh): max |close-EMAfast| (ATR)", group=grpBear, step=0.1, minval=0.5)
 bearBreakDistBypassBars = input.int(4, "Bear breakdown: bypass EMA-distance filter if PB age <= N bars", group=grpBear, minval=0)
@@ -656,6 +660,7 @@ bearVetoMaskNow += (htfOnNow) ? 4 : 0
 bearVetoMaskNow += (not (pendingBear or bearActive)) ? 8 : 0
 
 var int bearReclaimCloseCnt = 0
+var int bearBDFailPulseCnt = 0
 var int   lastRBShortExitBar = na
 
 // ---- RB SHORT execution latch (Commit S2)
@@ -3037,7 +3042,8 @@ if bearShortEnter
     entryModeTag := "BEAR"
     bearEntryArch := bearEnterAccept ? 1 : 0   // 1=accept, 0=breakdown
     bearReclLvlPos := bearReclLvl
-    bearEmaFastPos := emaFast    
+    bearEmaFastPos := emaFast   
+    bearBDFailPulseCnt := 0 
 // L1 pending entry (committed on actual fill)
     L1_pendDir  := "SHORT"
     L1_pendReg  := "BEAR"
@@ -4010,6 +4016,8 @@ if not inPos
     bearReclLvlPos := na
 if not inPos
     bearEmaFastPos := na
+if not inPos
+    bearBDFailPulseCnt := 0
 
 //====================================================
 // Bull TP0 partial (early de-risk; mirrors BEAR_TP0)
@@ -4750,20 +4758,49 @@ if exitOk and inPos
     // 0) HTF flip kill-switch (SHORTS) — do not hold shorts into HTF bull
     shortHTFKill = inPos and isShort and htfTrendOk and (not htfNeutral)
 
-        // 0a) BEAR breakdown reclaim invalidation (EARLY) — kill failed breakdown shorts on close-based reclaim
+        // 0a) BEAR breakdown early-failure exit — breakdown only, pre-TP0, first N bars
+    bool bearBDFailExitNow = false
     bool bearReclaimExitNow = false
 
-    if barstate.isconfirmed and inPos and isShort and (posTag == "BEAR") and bearExitUseReclaim
+    if barstate.isconfirmed and inPos and isShort and (posTag == "BEAR")
+        bool bdOnly      = (bearEntryArch == 0)
+        bool preTP0      = (not bearTP0Done)
+        bool inFailWin   = (bearBarsIn <= bearBD_FailWinBars)
         bool reclaimLvlHit = (not na(bearReclLvlPos)) and (close > bearReclLvlPos)
-        bool emaReclaimHit = bearExitUseEmaReclaim and (not na(bearEmaFastPos)) and (close > bearEmaFastPos)
-        bool reclaimNow = reclaimLvlHit or emaReclaimHit
+        bool emaFailHit    = (not bearBD_FailNeedEMA) or ((not na(bearEmaFastPos)) and (close > bearEmaFastPos))
+        bool failPulseNow  = bearBD_FailExitOn and bdOnly and preTP0 and inFailWin and reclaimLvlHit and emaFailHit
 
-        bearReclaimCloseCnt := reclaimNow ? (nz(bearReclaimCloseCnt[1]) + 1) : 0
-        bearReclaimExitNow := bearReclaimCloseCnt >= bearExitReclaimBars
+        bearBDFailPulseCnt := failPulseNow ? (nz(bearBDFailPulseCnt[1]) + 1) : nz(bearBDFailPulseCnt[1])
+        bearBDFailExitNow := bearBD_FailExitOn and bdOnly and preTP0 and (bearBDFailPulseCnt >= bearBD_FailPulseHits)
+
+        if bearExitUseReclaim
+            bool emaReclaimHit = bearExitUseEmaReclaim and (not na(bearEmaFastPos)) and (close > bearEmaFastPos)
+            bool reclaimNow = reclaimLvlHit or emaReclaimHit
+            bearReclaimCloseCnt := reclaimNow ? (nz(bearReclaimCloseCnt[1]) + 1) : 0
+            bearReclaimExitNow := bearReclaimCloseCnt >= bearExitReclaimBars
+        else
+            bearReclaimCloseCnt := 0
     else
+        bearBDFailPulseCnt := 0
         bearReclaimCloseCnt := 0
 
-    if bearReclaimExitNow
+    if bearBDFailExitNow
+        closeShortAll("BEAR_BD_FAIL")
+        [tmpExitPending, tmpExitReason, tmpExitOutcome, tmpRegExit] = L1_markExit("BEAR_BD_FAIL", 0, logModeNow())
+
+        L1_exitPending := tmpExitPending
+        L1_exitReason  := tmpExitReason
+        L1_exitOutcome := tmpExitOutcome
+        L1_regExit     := tmpRegExit
+
+        logTrade(logModeNow(), entryScore, "BEAR_BD_FAIL", 0)
+
+        lastBearShortExitBar := bar_index
+        pendingReset := true
+        forcedMode := Mode.Wait
+        forcedUntilBar := bar_index + downgradeBars
+
+    if (not bearBDFailExitNow) and bearReclaimExitNow
         closeShortAll("BEAR_RECLAIM_EXIT")
         // temp tuple unpack
         [tmpExitPending, tmpExitReason, tmpExitOutcome, tmpRegExit] = L1_markExit("BEAR_RECLAIM_EXIT", 0, logModeNow())
@@ -4781,7 +4818,7 @@ if exitOk and inPos
         forcedMode := Mode.Wait
         forcedUntilBar := bar_index + downgradeBars
 
-    if (not bearReclaimExitNow) and shortHTFKill and ((posTag == "BEAR") or (posTag == "RANGEB"))
+    if (not bearBDFailExitNow) and (not bearReclaimExitNow) and shortHTFKill and ((posTag == "BEAR") or (posTag == "RANGEB"))
         //strategy.close("SHORT", comment="HTF-BULL-KILL")
         //strategy.close("RB_SHORT", comment="HTF-BULL-KILL")
         // --- Bear: pre-HTF kill exit on LTF reclaim (close-based) ---
