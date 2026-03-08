@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.32 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.33 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -283,6 +283,9 @@ bearLvlHold_ATR    = input.float(0.10, "Bear SHORT: close hold allowance above b
 bearBD_Off_CloseLocMax = input.float(0.34, "Bear breakdown (HTF_OFF): max closeLoc (veto weak breakdown)", group=grpBear, step=0.01, minval=0.01, maxval=0.99)
 bearBD_Off_HiAdxMin = input.float(50.0, "Bear breakdown (HTF_OFF): high-ADX weak-close veto if ADX >= X", group=grpBear, step=1.0, minval=1.0)
 bearBD_Off_HiAdx_CloseLocMax = input.float(0.20, "Bear breakdown (HTF_OFF): high-ADX weak-close veto if closeLoc > X", group=grpBear, step=0.01, minval=0.01, maxval=0.99)
+bearBD_WeakCloseSlopeOn = input.bool(true, "Bear breakdown (HTF_OFF): veto middling close if ADX slope too weak", group=grpBear)
+bearBD_WeakCloseLocMax = input.float(0.15, "Bear breakdown (HTF_OFF): weak-close threshold for slope veto", group=grpBear, step=0.01, minval=0.01, maxval=0.99)
+bearBD_WeakCloseSlopeMin = input.float(3.00, "Bear breakdown (HTF_OFF): minimum ADX slope when closeLoc > threshold", group=grpBear, step=0.10)
 bearMinBodyPct     = input.float(0.20, "Bear SHORT: breakdown candle body/range >=", group=grpBear, step=0.05)
 bearBreakLookback  = input.int(9, "Bear SHORT: breakdown must break last N-bar low", group=grpBear, minval=3)
 
@@ -2301,7 +2304,17 @@ bool bearBD_OffHiAdxWeakCloseVeto =
      (adx >= bearBD_Off_HiAdxMin) and
      (closeLoc > bearBD_Off_HiAdx_CloseLocMax)
 
-bearBD_OffVeto = bearBD_OffWeakCloseVeto or bearBD_OffHiAdxWeakCloseVeto or bearOffSqVeto
+bool bearBD_WeakCloseSlopeVeto =
+     bearBD_WeakCloseSlopeOn and
+     bearOffNow and
+     (closeLoc > bearBD_WeakCloseLocMax) and
+     (adxSlopeNow < bearBD_WeakCloseSlopeMin)
+
+bearBD_OffVeto =
+     bearBD_OffWeakCloseVeto or
+     bearBD_OffHiAdxWeakCloseVeto or
+     bearBD_WeakCloseSlopeVeto or
+     bearOffSqVeto
 
 bearShortBreakdownNow =
      bearActive and bearShortOn and (not inPos) and (bearPBSeen or bearFreshNoPBOk) and
@@ -3883,8 +3896,7 @@ bearBlkMask += ((not bearShortADXOk) ? BLK_ADX : 0)
 bearBlkMask += ((not bearReentryOk) ? BLK_SPACING : 0)
 bearBlkMask += ((not shortCooldownOk) ? BLK_HTF : 0)
 bearBlkMask += ((not bearLocalDowntrendOk) ? BLK_OTHER : 0)
-
-
+bearBlkMask += (bearBD_WeakCloseSlopeVeto ? BLK_OTHER : 0)
 
 
 // ---- L2 window log: CANDIDATES (missed opportunities) ----
