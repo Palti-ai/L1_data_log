@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.28 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.29 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -285,6 +285,8 @@ bearBreakLookback  = input.int(9, "Bear SHORT: breakdown must break last N-bar l
 bearArmMaxBars     = input.int(14, "Bear SHORT: expire retest in N bars", group=grpBear, minval=3)
 bearTS_Bars        = input.int(24, "Bear SHORT time-stop bars", group=grpBear, minval=5)
 bearTS_MinMFE_ATR  = input.float(0.30, "Bear TS only if MFE < ATR*x", group=grpBear, step=0.05)
+bearBD_FailExitBars       = input.int(20,   "Bear breakdown fail exit bars", group=grpBear, minval=5)
+bearBD_FailMinESATR       = input.float(3.50, "Bear breakdown fail: entry |close-EMA slow| / ATR >=", group=grpBear, step=0.05)
 
 // --- BEAR_S_ACCEPT: ONLY veto low-vol weak accepts when HTF is OFF ---
 bearAccOff_RngAtrMax      = input.float(2.00, "BEAR ACCEPT (HTF_OFF): Range/ATR <= X", group=grpBear, step=0.05)
@@ -638,6 +640,7 @@ var int   lastBearShortExitBar = na   // Change 2: re-entry throttle
 var int bearEntryArch = na
 var float bearReclLvlPos = na
 var float bearEmaFastPos = na
+var float bearDistESATRPos = na
 //====================================================
 // BEAR diagnostics masks (LOG ONLY; no behavior impact)
 // allowMask: which “good” gates were true
@@ -3037,7 +3040,8 @@ if bearShortEnter
     entryModeTag := "BEAR"
     bearEntryArch := bearEnterAccept ? 1 : 0   // 1=accept, 0=breakdown
     bearReclLvlPos := bearReclLvl
-    bearEmaFastPos := emaFast    
+    bearEmaFastPos := emaFast
+    bearDistESATRPos := (atr > 0 ? math.abs(close - emaSlow) / atr : na)    
 // L1 pending entry (committed on actual fill)
     L1_pendDir  := "SHORT"
     L1_pendReg  := "BEAR"
@@ -4010,6 +4014,8 @@ if not inPos
     bearReclLvlPos := na
 if not inPos
     bearEmaFastPos := na
+if not inPos
+    bearDistESATRPos := na
 
 //====================================================
 // Bull TP0 partial (early de-risk; mirrors BEAR_TP0)
@@ -4163,6 +4169,17 @@ bool bearTP0NoExtExit = bearTP0ProofDue and (bearTP0AddExtPct < bearTP0ProofExtP
 
 bearBarsIn = (inPos and posTag=="BEAR" and not na(lastEntryBar)) ? (bar_index - lastEntryBar) : 0
 bearTimeStop = inPos and posTag=="BEAR" and (bearBarsIn >= bearTS_Bars) and (bearMFE < atr * bearTS_MinMFE_ATR)
+
+bearBreakdownFailExit =
+     inPos and
+     (posTag == "BEAR") and
+     (bearEntryArch == 0) and                 // breakdown only
+     (not bearTP0Done) and
+     (bearBarsIn >= bearBD_FailExitBars) and
+     (not na(bearDistESATRPos)) and
+     (bearDistESATRPos >= bearBD_FailMinESATR) and
+     (not na(bearReclLvlPos)) and
+     (close > bearReclLvlPos)
 
 // RB SHORT time-stop (must pay quickly)
 rbSMFE = (inPos and posTag=="RANGEB" and isShort) ? (strategy.position_avg_price - tradeLo) : 0.0
@@ -4989,7 +5006,26 @@ if exitOk and inPos
         pendingReset := true
         forcedUntilBar := na
 
-    // 5.8) Bear SHORT time-stop
+    // 5.8) Bear SHORT breakdown fail exit
+    else if bearBreakdownFailExit
+        strategy.close("SHORT", comment="BEAR-BD-FAIL")
+        // temp tuple unpack
+        [tmpExitPending, tmpExitReason, tmpExitOutcome, tmpRegExit] = L1_markExit("BEAR-BD-FAIL", 0, logModeNow())
+
+        // commit to globals
+        L1_exitPending := tmpExitPending
+        L1_exitReason  := tmpExitReason
+        L1_exitOutcome := tmpExitOutcome
+        L1_regExit     := tmpRegExit
+
+        logTrade(logModeNow(), entryScore, "BEAR-BD-FAIL", 0)
+
+        lastBearShortExitBar := bar_index
+        pendingReset := true
+        forcedMode := Mode.RangeB
+        forcedUntilBar := bar_index + downgradeBars
+
+    // 5.9) Bear SHORT time-stop
     else if bearTimeStop
         strategy.close("SHORT", comment="BEAR-TS")
         // temp tuple unpack
