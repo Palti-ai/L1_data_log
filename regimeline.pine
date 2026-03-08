@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.30 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.31 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -4274,6 +4274,11 @@ if exitOk and inPos
         exitReason := "RA_TS"
         exitReg := "RANGE-A"
 
+    if (not doExit) and bearBreakdownFailExit
+        doExit := true
+        exitReason := "BEAR-BD-FAIL"
+        exitReg := "BEAR"
+
     if (not doExit) and bearTimeStop
         doExit := true
         exitReason := "BEAR_TS"
@@ -5003,25 +5008,6 @@ if exitOk and inPos
         // --- RESET AFTER FLAT ---
         pendingReset := true
         forcedUntilBar := na
-
-    // 5.8) Bear SHORT breakdown fail exit
-    else if bearBreakdownFailExit
-        strategy.close("SHORT", comment="BEAR-BD-FAIL")
-        // temp tuple unpack
-        [tmpExitPending, tmpExitReason, tmpExitOutcome, tmpRegExit] = L1_markExit("BEAR-BD-FAIL", 0, logModeNow())
-
-        // commit to globals
-        L1_exitPending := tmpExitPending
-        L1_exitReason  := tmpExitReason
-        L1_exitOutcome := tmpExitOutcome
-        L1_regExit     := tmpRegExit
-
-        logTrade(logModeNow(), entryScore, "BEAR-BD-FAIL", 0)
-
-        lastBearShortExitBar := bar_index
-        pendingReset := true
-        forcedMode := Mode.RangeB
-        forcedUntilBar := bar_index + downgradeBars
 
     // 5.9) Bear SHORT time-stop
     else if bearTimeStop
