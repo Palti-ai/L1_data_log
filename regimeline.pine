@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.31 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.32 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -662,6 +662,9 @@ bearVetoMaskNow += (not (pendingBear or bearActive)) ? 8 : 0
 var int bearReclaimCloseCnt = 0
 var int bearBDFailPulseCnt = 0
 var int   lastRBShortExitBar = na
+var int bearEntryArchPend = na
+var float bearReclLvlPosPend = na
+var float bearEmaFastPosPend = na
 
 var int L2_dbg_bdOnly = na
 var int L2_dbg_preTP0 = na
@@ -1104,6 +1107,10 @@ if posOpened
         L1_bearHtfFlipEnt      := htfFlipEventNow
         L1_bearAllowMaskEnt    := bearAllowMaskNow
         L1_bearVetoMaskEnt     := bearVetoMaskNow
+        bearEntryArch := bearEntryArchPend
+        bearReclLvlPos := bearReclLvlPosPend
+        bearEmaFastPos := bearEmaFastPosPend
+        bearBDFailPulseCnt := 0
     else
         // Keep non-BEAR trades clean (na) so parsing is trivial
         L1_bearPendingEnt      := na
@@ -1121,6 +1128,9 @@ if posOpened
         L1_bearHtfFlipEnt      := ""
         L1_bearAllowMaskEnt    := na
         L1_bearVetoMaskEnt     := na
+        bearEntryArchPend := na
+    bearReclLvlPosPend := na
+    bearEmaFastPosPend := na
     // Clear BEAR pending latch snapshot after commit
     L1_pendBearPBSeen := na
     L1_pendBearPBBar  := na
@@ -3064,10 +3074,12 @@ if bearShortEnter
 
     posTag := "BEAR"
     entryModeTag := "BEAR"
-    bearEntryArch := bearEnterAccept ? 1 : 0   // 1=accept, 0=breakdown
-    bearReclLvlPos := bearReclLvl
-    bearEmaFastPos := emaFast   
-    bearBDFailPulseCnt := 0 
+
+    // Pending latches — commit on actual fill, not on signal bar
+    bearEntryArchPend := bearEnterAccept ? 1 : 0   // 1=accept, 0=breakdown
+    bearReclLvlPosPend := bearReclLvl
+    bearEmaFastPosPend := emaFast
+    bearBDFailPulseCnt := 0
 // L1 pending entry (committed on actual fill)
     L1_pendDir  := "SHORT"
     L1_pendReg  := "BEAR"
@@ -4042,6 +4054,10 @@ if not inPos
     bearEmaFastPos := na
 if not inPos
     bearBDFailPulseCnt := 0
+if not inPos
+    bearEntryArchPend := na
+    bearReclLvlPosPend := na
+    bearEmaFastPosPend := na
 if not inPos
     L2_dbg_bdOnly := na
     L2_dbg_preTP0 := na
