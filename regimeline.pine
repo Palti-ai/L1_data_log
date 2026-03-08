@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.31 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.32 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -4173,7 +4173,6 @@ bearTimeStop = inPos and posTag=="BEAR" and (bearBarsIn >= bearTS_Bars) and (bea
 bearBreakdownFailExit =
      inPos and
      (posTag == "BEAR") and
-     (bearEntryArch == 0) and                 // breakdown only
      (not bearTP0Done) and
      (bearBarsIn >= bearBD_FailExitBars) and
      (not na(bearDistESATRPos)) and
