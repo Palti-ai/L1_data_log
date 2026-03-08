@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.30 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.31 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -662,6 +662,18 @@ bearVetoMaskNow += (not (pendingBear or bearActive)) ? 8 : 0
 var int bearReclaimCloseCnt = 0
 var int bearBDFailPulseCnt = 0
 var int   lastRBShortExitBar = na
+
+var int L2_dbg_bdOnly = na
+var int L2_dbg_preTP0 = na
+var int L2_dbg_inFailWin = na
+var int L2_dbg_reclaimLvlHit = na
+var int L2_dbg_emaFailHit = na
+var int L2_dbg_failPulseNow = na
+var int L2_dbg_failPulseCnt = na
+var int L2_dbg_bearBarsIn = na
+var int L2_dbg_bearEntryArch = na
+var int L2_dbg_bearTP0Done = na
+var int L2_dbg_posTagBear = na
 
 // ---- RB SHORT execution latch (Commit S2)
 var bool rbSPBSeen = false
@@ -2826,7 +2838,8 @@ if exportL2 and not l2HeaderDone and barstate.isconfirmed
          "adx,adxSlope," +
          "isEntry,isExit,exitReason,isCand,blkMask,posTag,posState," +
          "pbAgeBars,pbImpAgeBars,pbFreshLateOk,pbFreshVeto,pbEnterExec,pbVetoMask," +
-         "pbExpAgeBars,pbExpAgeVeto,pbLateVeto,pbLifecycleVeto,pbAgeVeto,pbFreshMinAge,pbMajorImpulseNow,pbLastMajorImpulseBar"
+         "pbExpAgeBars,pbExpAgeVeto,pbLateVeto,pbLifecycleVeto,pbAgeVeto,pbFreshMinAge,pbMajorImpulseNow,pbLastMajorImpulseBar," +
+         "dbgBdOnly,dbgPreTP0,dbgInFailWin,dbgReclaimLvlHit,dbgEmaFailHit,dbgFailPulseNow,dbgFailPulseCnt,dbgBearBarsIn,dbgBearEntryArch,dbgBearTP0Done,dbgPosTagBear"
     )
 
 
@@ -2927,7 +2940,18 @@ l2_emitRow(_idx, _rel, _isEntry, _isExit, _exitReason, _isCand, _blkMask) =>
       pbAgeVetoS + "," +
       pbMinAgeS + "," +
       pbMajNowS + "," +
-      pbLastImpS
+      pbLastImpS + "," +
+      str.tostring(L2_dbg_bdOnly) + "," +
+      str.tostring(L2_dbg_preTP0) + "," +
+      str.tostring(L2_dbg_inFailWin) + "," +
+      str.tostring(L2_dbg_reclaimLvlHit) + "," +
+      str.tostring(L2_dbg_emaFailHit) + "," +
+      str.tostring(L2_dbg_failPulseNow) + "," +
+      str.tostring(L2_dbg_failPulseCnt) + "," +
+      str.tostring(L2_dbg_bearBarsIn) + "," +
+      str.tostring(L2_dbg_bearEntryArch) + "," +
+      str.tostring(L2_dbg_bearTP0Done) + "," +
+      str.tostring(L2_dbg_posTagBear)
     )
 
 
@@ -4018,6 +4042,18 @@ if not inPos
     bearEmaFastPos := na
 if not inPos
     bearBDFailPulseCnt := 0
+if not inPos
+    L2_dbg_bdOnly := na
+    L2_dbg_preTP0 := na
+    L2_dbg_inFailWin := na
+    L2_dbg_reclaimLvlHit := na
+    L2_dbg_emaFailHit := na
+    L2_dbg_failPulseNow := na
+    L2_dbg_failPulseCnt := na
+    L2_dbg_bearBarsIn := na
+    L2_dbg_bearEntryArch := na
+    L2_dbg_bearTP0Done := na
+    L2_dbg_posTagBear := na
 
 //====================================================
 // Bull TP0 partial (early de-risk; mirrors BEAR_TP0)
@@ -4770,8 +4806,20 @@ if exitOk and inPos
         bool emaFailHit    = (not bearBD_FailNeedEMA) or ((not na(bearEmaFastPos)) and (close > bearEmaFastPos))
         bool failPulseNow  = bearBD_FailExitOn and bdOnly and preTP0 and inFailWin and reclaimLvlHit and emaFailHit
 
+        L2_dbg_bdOnly := bdOnly ? 1 : 0
+        L2_dbg_preTP0 := preTP0 ? 1 : 0
+        L2_dbg_inFailWin := inFailWin ? 1 : 0
+        L2_dbg_reclaimLvlHit := reclaimLvlHit ? 1 : 0
+        L2_dbg_emaFailHit := emaFailHit ? 1 : 0
+        L2_dbg_failPulseNow := failPulseNow ? 1 : 0
+        L2_dbg_bearBarsIn := bearBarsIn
+        L2_dbg_bearEntryArch := bearEntryArch
+        L2_dbg_bearTP0Done := bearTP0Done ? 1 : 0
+        L2_dbg_posTagBear := posTag == "BEAR" ? 1 : 0
+
         bearBDFailPulseCnt := failPulseNow ? (nz(bearBDFailPulseCnt[1]) + 1) : nz(bearBDFailPulseCnt[1])
         bearBDFailExitNow := bearBD_FailExitOn and bdOnly and preTP0 and (bearBDFailPulseCnt >= bearBD_FailPulseHits)
+        L2_dbg_failPulseCnt := bearBDFailPulseCnt
 
         if bearExitUseReclaim
             bool emaReclaimHit = bearExitUseEmaReclaim and (not na(bearEmaFastPos)) and (close > bearEmaFastPos)
@@ -4783,6 +4831,17 @@ if exitOk and inPos
     else
         bearBDFailPulseCnt := 0
         bearReclaimCloseCnt := 0
+        L2_dbg_bdOnly := na
+        L2_dbg_preTP0 := na
+        L2_dbg_inFailWin := na
+        L2_dbg_reclaimLvlHit := na
+        L2_dbg_emaFailHit := na
+        L2_dbg_failPulseNow := na
+        L2_dbg_failPulseCnt := na
+        L2_dbg_bearBarsIn := na
+        L2_dbg_bearEntryArch := na
+        L2_dbg_bearTP0Done := na
+        L2_dbg_posTagBear := na
 
     if bearBDFailExitNow
         closeShortAll("BEAR_BD_FAIL")
