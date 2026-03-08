@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.33 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.34 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -274,6 +274,9 @@ bearBD_WeakDriftStrongOn         = input.bool(true,  "Bear weak-drift strong-bod
 bearBD_WeakDriftStrong_RngAtrMax = input.float(1.45, "Bear weak-drift strong-body: max range ATR", group=grpBear, step=0.05)
 bearBD_WeakDriftStrong_DistEFMin = input.float(2.45, "Bear weak-drift strong-body: min dist EF ATR", group=grpBear, step=0.05)
 bearBD_WeakDriftStrong_AdxMin    = input.float(30.0, "Bear weak-drift strong-body: min ADX", group=grpBear, step=0.5)
+bearBD_ReclaimExitCloses = input.int(2, "Bear breakdown: exit after N confirmed closes above reclaim/EMA", group=grpBear, minval=1, maxval=4)
+bearBD_ReclaimExitUseEma = input.bool(true, "Bear breakdown: count EMAfast reclaim as invalidation", group=grpBear)
+bearBD_ReclaimExitPreTP0Only = input.bool(true, "Bear breakdown: reclaim exit only before TP0", group=grpBear)
 
 // BEAR_S_ACCEPT liquidation-climax veto (blocks shorting the dump)
 bearAccClimax_RngAtrMin = input.float(1.40, "BEAR Accept Veto: Range/ATR ≥", step=0.05, group="Bear")
@@ -858,6 +861,27 @@ var float tradeLo      = na
 // Defer resets until we are truly flat (calc_on_every_tick safety)
 var bool pendingReset = false
 var bool bearForceCloseShort = false
+
+bool bearBD_Pos = inPos and isShort and (posTag == "BEAR") and not na(bearReclLvlPos)
+
+bool bearBD_ReclaimAgainstPos =
+     bearBD_Pos and
+     (
+         (not na(bearReclLvlPos) and close > bearReclLvlPos) or
+         (bearBD_ReclaimExitUseEma and not na(bearEmaFastPos) and close > bearEmaFastPos)
+     )
+
+if barstate.isconfirmed
+    bearReclaimCloseCnt :=
+         bearBD_ReclaimAgainstPos ? (nz(bearReclaimCloseCnt[1]) + 1) : 0
+else
+    bearReclaimCloseCnt := nz(bearReclaimCloseCnt[1])
+
+bool bearBD_ReclaimExitNow =
+     bearBD_Pos and
+     (not bearBD_ReclaimExitPreTP0Only or not bearTP0Done) and
+     (bearReclaimCloseCnt >= bearBD_ReclaimExitCloses)
+     
 
 //====================================================
 // LAYER 1 — Trade-level CSV export to Pine Logs
@@ -4058,13 +4082,15 @@ if not inPos
     bearTP0EntryPx := na
 if not inPos
     bullTP0Done := false
-if not inPos
+if not inPos 
     bearEntryArch := na
-if not inPos
+if not inPos 
     bearReclLvlPos := na
-if not inPos
+if not inPos 
     bearEmaFastPos := na
-if not inPos
+if not inPos 
+    bearReclaimCloseCnt := 0
+if not inPos 
     bearBDFailPulseCnt := 0
 if not inPos
     bearEntryArchPend := na
@@ -4142,6 +4168,9 @@ if exitOk and bearTP0Hit
         L1_lastPartialBar := bar_index
         L1_lastPartialTime := time
         L1_partialReasons := (L1_partialReasons == "" ? "BEAR_TP0" : (L1_partialReasons + "|" + "BEAR_TP0"))
+
+if exitOk and bearBD_ReclaimExitNow
+    closeShortAll("BEAR_RECLAIM_EXIT")
 
 if exitOk and bearTP1Hit
     // partial close ONLY the base short id
