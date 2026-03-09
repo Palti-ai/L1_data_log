@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.34 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.35 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -295,6 +295,8 @@ bearBreakLookback  = input.int(9, "Bear SHORT: breakdown must break last N-bar l
 bearArmMaxBars     = input.int(14, "Bear SHORT: expire retest in N bars", group=grpBear, minval=3)
 bearTS_Bars        = input.int(24, "Bear SHORT time-stop bars", group=grpBear, minval=5)
 bearTS_MinMFE_ATR  = input.float(0.30, "Bear TS only if MFE < ATR*x", group=grpBear, step=0.05)
+bearBD_PreTP0TimeoutOn   = input.bool(true, "Bear breakdown: pre-TP0 timeout exit", group=grpBear)
+bearBD_PreTP0TimeoutBars = input.int(28, "Bear breakdown: exit if TP0 not reached within N bars", group=grpBear, minval=5)
 
 // --- BEAR_S_ACCEPT: ONLY veto low-vol weak accepts when HTF is OFF ---
 bearAccOff_RngAtrMax      = input.float(2.00, "BEAR ACCEPT (HTF_OFF): Range/ATR <= X", group=grpBear, step=0.05)
@@ -4852,6 +4854,7 @@ if exitOk and inPos
     shortHTFKill = inPos and isShort and htfTrendOk and (not htfNeutral)
 
         // 0a) BEAR breakdown early-failure exit — breakdown only, pre-TP0, first N bars
+    bool bearBDTimeoutExitNow = false
     bool bearBDFailExitNow = false
     bool bearReclaimExitNow = false
 
@@ -4859,10 +4862,10 @@ if exitOk and inPos
         bool bdOnly      = (bearEntryArch == 0)
         bool preTP0      = (not bearTP0Done)
         bool inFailWin   = (bearBarsIn <= bearBD_FailWinBars)
+        bool bdTimeoutNow = bearBD_PreTP0TimeoutOn and bdOnly and preTP0 and (bearBarsIn >= bearBD_PreTP0TimeoutBars)
         bool reclaimLvlHit = (not na(bearReclLvlPos)) and (close >= (bearReclLvlPos - syminfo.mintick))
         bool emaFailHit    = (not bearBD_FailNeedEMA) or ((not na(bearEmaFastPos)) and (close > bearEmaFastPos))
         bool failPulseNow  = bearBD_FailExitOn and bdOnly and preTP0 and inFailWin and reclaimLvlHit and emaFailHit
-
         L2_dbg_bdOnly := bdOnly ? 1 : 0
         L2_dbg_preTP0 := preTP0 ? 1 : 0
         L2_dbg_inFailWin := inFailWin ? 1 : 0
@@ -4875,6 +4878,7 @@ if exitOk and inPos
         L2_dbg_posTagBear := posTag == "BEAR" ? 1 : 0
 
         bearBDFailPulseCnt := failPulseNow ? (nz(bearBDFailPulseCnt[1]) + 1) : nz(bearBDFailPulseCnt[1])
+        bearBDTimeoutExitNow := bdTimeoutNow
         bearBDFailExitNow := bearBD_FailExitOn and bdOnly and preTP0 and (bearBDFailPulseCnt >= bearBD_FailPulseHits)
         L2_dbg_failPulseCnt := bearBDFailPulseCnt
 
@@ -4900,7 +4904,23 @@ if exitOk and inPos
         L2_dbg_bearTP0Done := na
         L2_dbg_posTagBear := na
 
-    if bearBDFailExitNow
+    if bearBDTimeoutExitNow
+        closeShortAll("BEAR_BD_TIMEOUT")
+        [tmpExitPending, tmpExitReason, tmpExitOutcome, tmpRegExit] = L1_markExit("BEAR_BD_TIMEOUT", 0, logModeNow())
+
+        L1_exitPending := tmpExitPending
+        L1_exitReason  := tmpExitReason
+        L1_exitOutcome := tmpExitOutcome
+        L1_regExit     := tmpRegExit
+
+        logTrade(logModeNow(), entryScore, "BEAR_BD_TIMEOUT", 0)
+
+        lastBearShortExitBar := bar_index
+        pendingReset := true
+        forcedMode := Mode.Wait
+        forcedUntilBar := bar_index + downgradeBars
+
+    if (not bearBDTimeoutExitNow) and bearBDFailExitNow
         closeShortAll("BEAR_BD_FAIL")
         [tmpExitPending, tmpExitReason, tmpExitOutcome, tmpRegExit] = L1_markExit("BEAR_BD_FAIL", 0, logModeNow())
 
@@ -4916,7 +4936,7 @@ if exitOk and inPos
         forcedMode := Mode.Wait
         forcedUntilBar := bar_index + downgradeBars
 
-    if (not bearBDFailExitNow) and bearReclaimExitNow
+    if (not bearBDTimeoutExitNow) and (not bearBDFailExitNow) and bearReclaimExitNow
         closeShortAll("BEAR_RECLAIM_EXIT")
         // temp tuple unpack
         [tmpExitPending, tmpExitReason, tmpExitOutcome, tmpRegExit] = L1_markExit("BEAR_RECLAIM_EXIT", 0, logModeNow())
@@ -4934,7 +4954,7 @@ if exitOk and inPos
         forcedMode := Mode.Wait
         forcedUntilBar := bar_index + downgradeBars
 
-    if (not bearBDFailExitNow) and (not bearReclaimExitNow) and shortHTFKill and ((posTag == "BEAR") or (posTag == "RANGEB"))
+    if (not bearBDTimeoutExitNow) and (not bearBDFailExitNow) and (not bearReclaimExitNow) and shortHTFKill and ((posTag == "BEAR") or (posTag == "RANGEB"))
         //strategy.close("SHORT", comment="HTF-BULL-KILL")
         //strategy.close("RB_SHORT", comment="HTF-BULL-KILL")
         // --- Bear: pre-HTF kill exit on LTF reclaim (close-based) ---
