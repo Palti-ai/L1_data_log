@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.38 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.39 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -305,7 +305,8 @@ bearAccOff_CloseLocMin    = input.float(0.14, "BEAR ACCEPT (HTF_OFF): closeLoc >
 bearAccOff_UseVeto        = input.bool(true, "BEAR ACCEPT (HTF_OFF): enable veto", group=grpBear)
 bearAccPBNearDecVetoOn     = input.bool(true, "Bear accept (HTF_OFF): veto post-PB weak accept too near decLow", group=grpBear)
 bearAccPBNearDecATRMax     = input.float(0.50, "Bear accept (HTF_OFF): max |close-decLow| / ATR for post-PB weak-accept veto", group=grpBear, step=0.05, minval=0.05)
-bearAccPBNearDecBodyPctMax = input.float(0.55, "Bear accept (HTF_OFF): max bodyPct for post-PB weak-accept veto", group=grpBear, step=0.05, minval=0.05, maxval=0.95)
+bearAccPBNearDecBodyPctMax = input.float(0.56, "Bear accept (HTF_OFF): max bodyPct for post-PB weak-accept veto", group=grpBear, step=0.05, minval=0.05, maxval=0.95)
+bearAccPBNearDecCloseLocMax = input.float(0.05, "Bear accept (HTF_OFF): max closeLoc for post-PB weak-accept veto", group=grpBear, step=0.01, minval=0.00, maxval=0.50)
 
 // --- HTF_OFF squeeze-risk veto (cross-coin): low-vol + overextended vs EMAfast ---
 bearOffSq_RngAtrMax       = input.float(1.10, "BEAR (HTF_OFF): squeeze veto if Range/ATR <= X", group=grpBear, step=0.05)
@@ -1539,6 +1540,7 @@ bearAccPBNearDecWeakBodyVeto =
      bearAccOffNow and
      bearPBSeen and
      bearCloseNearLowOk and
+     (closeLoc <= bearAccPBNearDecCloseLocMax) and
      (bodyPct <= bearAccPBNearDecBodyPctMax) and
      (not na(bearAccDecDistATR)) and
      (bearAccDecDistATR <= bearAccPBNearDecATRMax)
