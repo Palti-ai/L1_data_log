@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.36 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.37 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -289,6 +289,7 @@ bearBD_Off_HiAdx_CloseLocMax = input.float(0.20, "Bear breakdown (HTF_OFF): high
 bearBD_WeakCloseSlopeOn = input.bool(true, "Bear breakdown (HTF_OFF): veto middling close if ADX slope too weak", group=grpBear)
 bearBD_WeakCloseLocMax = input.float(0.15, "Bear breakdown (HTF_OFF): weak-close threshold for slope veto", group=grpBear, step=0.01, minval=0.01, maxval=0.99)
 bearBD_WeakCloseSlopeMin = input.float(3.00, "Bear breakdown (HTF_OFF): minimum ADX slope when closeLoc > threshold", group=grpBear, step=0.10)
+bearBD_WeakCloseSlopeBandMax = input.float(0.19, "Bear breakdown (HTF_OFF): upper closeLoc bound for slope veto band", group=grpBear, step=0.01, minval=0.01, maxval=0.99)
 bearMinBodyPct     = input.float(0.20, "Bear SHORT: breakdown candle body/range >=", group=grpBear, step=0.05)
 bearBreakLookback  = input.int(9, "Bear SHORT: breakdown must break last N-bar low", group=grpBear, minval=3)
 
@@ -2334,6 +2335,7 @@ bool bearBD_WeakCloseSlopeVeto =
      bearBD_WeakCloseSlopeOn and
      bearOffNow and
      (closeLoc > bearBD_WeakCloseLocMax) and
+     (closeLoc <= bearBD_WeakCloseSlopeBandMax) and
      (adxSlopeNow < bearBD_WeakCloseSlopeMin)
 
 bearBD_OffVeto =
