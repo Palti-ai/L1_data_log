@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.35 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.36 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -256,7 +256,7 @@ bearExitReclaimBars = input.int(2,     "Bear short: reclaim closes needed",     
 bearExitUseEmaReclaim = input.bool(true, "Bear short: EMAfast reclaim counts as reclaim",    group=grpBear)
 bearBreakMaxDistEFATR = input.float(2.6, "Bear breakdown: max |close-EMAfast| (ATR)", group=grpBear, step=0.1, minval=0.1)
 bearBD_FailExitOn       = input.bool(true, "Bear breakdown: early fail exit on reclaim pulses", group=grpBear)
-bearBD_FailWinBars      = input.int(20, "Bear breakdown: early-fail window bars", group=grpBear, minval=1)
+bearBD_FailWinBars      = input.int(28, "Bear breakdown: early-fail window bars", group=grpBear, minval=1)
 bearBD_FailPulseHits    = input.int(2, "Bear breakdown: reclaim pulses to fail", group=grpBear, minval=1, maxval=10)
 bearBD_FailNeedEMA      = input.bool(true, "Bear breakdown: reclaim pulse must also close above EMAfast", group=grpBear)
 bearBD_FreshEndBarsMax   = input.int(16, "Bear breakdown (no-PB): max bars since END_BULL", group=grpBear, minval=1)
@@ -4886,7 +4886,7 @@ if exitOk and inPos
             bool emaReclaimHit = bearExitUseEmaReclaim and (not na(bearEmaFastPos)) and (close > bearEmaFastPos)
             bool reclaimNow = reclaimLvlHit or emaReclaimHit
             bearReclaimCloseCnt := reclaimNow ? (nz(bearReclaimCloseCnt[1]) + 1) : 0
-            bearReclaimExitNow := bearReclaimCloseCnt >= bearExitReclaimBars
+            bearReclaimExitNow := bdOnly and preTP0 and (bearReclaimCloseCnt >= bearExitReclaimBars)
         else
             bearReclaimCloseCnt := 0
     else
