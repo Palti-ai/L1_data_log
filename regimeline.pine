@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.37 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.38 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -880,10 +880,43 @@ if barstate.isconfirmed
 else
     bearReclaimCloseCnt := nz(bearReclaimCloseCnt[1])
 
-bool bearBD_ReclaimExitNow =
-     bearBD_Pos and
-     (not bearBD_ReclaimExitPreTP0Only or not bearTP0Done) and
-     (bearReclaimCloseCnt >= bearBD_ReclaimExitCloses)
+//====================================================
+// BEAR structural reclaim invalidation
+// Applies to BOTH:
+// 1) breakdown shorts
+// 2) accept shorts
+// Exit only BEFORE TP0, so winners that already paid are not disturbed.
+//====================================================
+
+// Keep your existing breakdown archetype check.
+// Add the equivalent accept-archetype check using your current bearEntryArch constants.
+bool bearIsBreakdownShort = inPos and posTag == "BEAR" and bearEntryArch == 0
+bool bearIsAcceptShort    = inPos and posTag == "BEAR" and bearEntryArch == 1
+
+float bearReclaimRef = na
+bearReclaimRef := math.max(
+     nz(bearReclLvlPos, bearReclLvl),
+     nz(bearEmaFastPos, emaFast)
+)
+
+// Structural failure = accepted reclaim back above the short-failure reference.
+// Use confirmed closes only.
+bool bearReclaimCloseNow =
+     inPos and posTag == "BEAR" and (not bearTP0Done) and
+     not na(bearReclaimRef) and close > bearReclaimRef
+
+if inPos and posTag == "BEAR" and (not bearTP0Done) and (bearIsBreakdownShort or bearIsAcceptShort)
+    bearReclaimCloseCnt := bearReclaimCloseNow ? (nz(bearReclaimCloseCnt[1]) + 1) : 0
+else
+    bearReclaimCloseCnt := 0
+
+bool bearBD_ReclaimExitNow  = bearIsBreakdownShort and bearReclaimCloseCnt >= 2
+bool bearACC_ReclaimExitNow = bearIsAcceptShort    and bearReclaimCloseCnt >= 2
+
+//bool bearBD_ReclaimExitNow =
+//     bearBD_Pos and
+//     (not bearBD_ReclaimExitPreTP0Only or not bearTP0Done) and
+//     (bearReclaimCloseCnt >= bearBD_ReclaimExitCloses)
      
 
 //====================================================
@@ -4173,7 +4206,7 @@ if exitOk and bearTP0Hit
         L1_lastPartialTime := time
         L1_partialReasons := (L1_partialReasons == "" ? "BEAR_TP0" : (L1_partialReasons + "|" + "BEAR_TP0"))
 
-if exitOk and bearBD_ReclaimExitNow
+if exitOk and (bearBD_ReclaimExitNow or bearACC_ReclaimExitNow)
     closeShortAll("BEAR_RECLAIM_EXIT")
 
 if exitOk and bearTP1Hit
@@ -4862,6 +4895,7 @@ if exitOk and inPos
 
     if barstate.isconfirmed and inPos and isShort and (posTag == "BEAR")
         bool bdOnly      = (bearEntryArch == 0)
+        bool bearAcceptOrBreakdown = (bearEntryArch == 0) or (bearEntryArch == 1)
         bool preTP0      = (not bearTP0Done)
         bool inFailWin   = (bearBarsIn <= bearBD_FailWinBars)
         bool bdTimeoutNow = bearBD_PreTP0TimeoutOn and bdOnly and preTP0 and (bearBarsIn >= bearBD_PreTP0TimeoutBars)
@@ -4888,7 +4922,7 @@ if exitOk and inPos
             bool emaReclaimHit = bearExitUseEmaReclaim and (not na(bearEmaFastPos)) and (close > bearEmaFastPos)
             bool reclaimNow = reclaimLvlHit or emaReclaimHit
             bearReclaimCloseCnt := reclaimNow ? (nz(bearReclaimCloseCnt[1]) + 1) : 0
-            bearReclaimExitNow := bdOnly and preTP0 and (bearReclaimCloseCnt >= bearExitReclaimBars)
+            bearReclaimExitNow := bearAcceptOrBreakdown and preTP0 and (bearReclaimCloseCnt >= bearExitReclaimBars)
         else
             bearReclaimCloseCnt := 0
     else
