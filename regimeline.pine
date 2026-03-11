@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.40 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.41 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -3146,9 +3146,16 @@ bool bearBD_OverrideOk =
 
 // ---- Split BEAR entry paths (avoid ACCEPT overriding BREAKDOWN) ----
 bool bearEnterBreak = (
-     barstate.isconfirmed and (not inPos) and bearShortBreakdownNow and bearLocalDowntrendOk
-     and (close < emaFast) and bearLockoutOk and bearReentryOk and shortCooldownOk
-     and (bearAllowContinuation or (not bearKillUseHTFveto or htfOffForRA))
+     barstate.isconfirmed and
+     (not inPos) and
+     bearShortBreakdownNow and
+     (not bearBD_WeakDriftVeto) and
+     bearLocalDowntrendOk and
+     (close < emaFast) and
+     bearLockoutOk and
+     bearReentryOk and
+     shortCooldownOk and
+     (bearAllowContinuation or (not bearKillUseHTFveto or htfOffForRA))
 )
 
 bool bearEnterAccept = (
