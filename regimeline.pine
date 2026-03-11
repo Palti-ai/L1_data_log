@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.38 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.39 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -1560,7 +1560,16 @@ bearAccOffWeakCloseVeto = bearAccOff_UseVeto and bearAccOffNow and
      (not na(bearRangeAtrLocal)) and (bearRangeAtrLocal <= bearAccOff_RngAtrMax) and
      (closeLoc >= bearAccOff_CloseLocMin)
 
-bearAccOffThinRangeVeto = bearAccOffNow and (not na(bearRangeAtrLocal)) and (bearRangeAtrLocal <= 0.60)
+// HTF_OFF accept-quality veto:
+// block thin / moderately-thin accept shorts unless the break is decisive.
+bearAcceptBreakDistATR = (atr > 0 and not na(bearBreakLvl)) ? ((bearBreakLvl - close) / atr) : na
+
+bearAccOffThinRangeVeto =
+     bearAccOffNow and (
+         ((not na(bearRangeAtrLocal)) and (bearRangeAtrLocal <= 0.60)) or
+         ((not na(bearRangeAtrLocal)) and (bearRangeAtrLocal <= 0.90) and
+          (not na(bearAcceptBreakDistATR)) and (bearAcceptBreakDistATR < 0.75))
+     )
 
 // Final accept veto = either squeeze veto OR weak-close veto
 bearAccOffVeto = bearOffSqVeto or bearOffSqVeto2 or bearAccOffWeakCloseVeto or bearAccOffThinRangeVeto
