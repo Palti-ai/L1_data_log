@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.39 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.40 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -2345,14 +2345,23 @@ bool bearBD_ChaseExh =
 // (A) original tiny-range + stretched + mediocre-body case
 // (B) strong-body but still stretched/non-expansive late breakdown case
 bool bearBD_WeakDriftVeto =
-      (bearBD_WeakDriftOn and
+     (bearBD_WeakDriftOn and
       (_bdRangeAtr < bearBD_WeakDrift_RngAtrMax) and
-      (_bdDistEF   > bearBD_WeakDrift_DistEFMin) and
-      (bodyPct     < bearBD_WeakDrift_BodyPctMax)) or
-      (bearBD_WeakDriftStrongOn and
+      (_bdDistEF > bearBD_WeakDrift_DistEFMin) and
+      (bodyPct < bearBD_WeakDrift_BodyPctMax)) or
+     (bearBD_WeakDriftStrongOn and
       (_bdRangeAtr < bearBD_WeakDriftStrong_RngAtrMax) and
-      (_bdDistEF   > bearBD_WeakDriftStrong_DistEFMin) and
-      (adx         >= bearBD_WeakDriftStrong_AdxMin))
+      (_bdDistEF > bearBD_WeakDriftStrong_DistEFMin) and
+      (adx >= bearBD_WeakDriftStrong_AdxMin)) or
+     (
+      (mode == Mode.RangeB) and
+      (not htfOnNow) and
+      (_bdRangeAtr < 0.70) and
+      (_bdDistEF > 2.00) and
+      (closeLoc > bearBD_Off_CloseLocMax) and
+      (bodyPct < 0.35) and
+      (adx >= 40.0)
+     )
 
 // “Confirm” = still closing below bearBreakLvl AND still breaking a short micro-low.
 // For 2-bar confirm, require the same on the previous confirmed bar.
