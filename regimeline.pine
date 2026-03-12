@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.41 — Strategy"
+const string STRAT_TITLE = "MakeItHapen v7.42 — Strategy"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -2358,7 +2358,6 @@ bool bearBD_WeakDriftVeto =
       (not htfOnNow) and
       (_bdRangeAtr < 0.70) and
       (_bdDistEF > 2.00) and
-      (closeLoc > bearBD_Off_CloseLocMax) and
       (bodyPct < 0.35) and
       (adx >= 40.0)
      )
