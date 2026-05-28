@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "MakeItHapen v7.42 — Strategy"
+const string STRAT_TITLE = "Regimeline v8.255 — PROFILE BREAKDOWN_DRIFT"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -12,13 +12,17 @@ strategy(STRAT_TITLE,
      default_qty_value=4,
      commission_type=strategy.commission.percent,
      commission_value=0.1,
-     slippage=2,
+     slippage=2,What Claude proposed is:
+
+
      calc_on_every_tick = true,
      process_orders_on_close = false,
      max_labels_count=500)
 
+float posAvg=strategy.position_avg_price
+float posSize=strategy.position_size
 //====================================================
-// Inputs
+// Inputs 
 //====================================================
 grpCore="Core"
 emaFastLen  = input.int(21, "EMA Fast", group=grpCore, minval=1)
@@ -27,13 +31,11 @@ atrLen      = input.int(14, "ATR", group=grpCore, minval=1)
 lvlLookback = input.int(24, "Decision Level Lookback", group=grpCore, minval=8)
 bufATR      = input.float(0.10, "Decision buffer (ATR*x)", group=grpCore, step=0.05)
 
-
 grpHTF="HTF Trend Veto"
 htfTF      = input.timeframe("60", "HTF timeframe", group=grpHTF)
 htfFastLen = input.int(21, "HTF EMA Fast", group=grpHTF, minval=1)
 htfSlowLen = input.int(55, "HTF EMA Slow", group=grpHTF, minval=1)
 htfNeutralSepPct = input.float(0.0050, "HTF neutral if EMA sep % <=", group=grpHTF, step=0.0001)
-
 
 grpADX="ADX Filters"
 adxLen       = input.int(14,  "ADX length", group=grpADX, minval=2)
@@ -42,7 +44,6 @@ adxBullMin   = input.float(23, "Bull: require ADX >=", group=grpADX, step=0.5)
 adxRangeAMax = input.float(22, "Range-A: require ADX <=", group=grpADX, step=0.5)
 adxRangeASoftMax = input.float(36, "Range-A SOFT cap: allow up to ADX <=", group=grpADX, step=0.5)
 adxBullExecMin = input.float(22, "Bull EXEC: require ADX >=", group=grpADX, step=0.5)
-adxBullStartMin = input.float(20, "Bull START: require ADX >=", group=grpADX, step=0.5)
 adxUseSlope  = input.bool(true, "Bull: require ADX rising (optional)", group=grpADX)
 adxGateBullMode = input.bool(false, "ADX gate Bull MODE (router)", group=grpADX)
 adxSlopeBars = input.int(3, "ADX rising over last N bars", group=grpADX, minval=1)
@@ -83,7 +84,6 @@ bullEmaSlopeBars   = input.int(3, "Bull: EMA slope bars", group=grpBull, minval=
 
 // --- PB guard (prevents late/chase PB entries) ---
 bullPBMaxAbove_ATR      = input.float(0.80, "Bull PB: max close above bullLevel (ATR)", group=grpBull, step=0.05)
-bullPBMaxBarsSinceAccept = input.int(24, "Bull PB: max bars since accept-up", group=grpBull, minval=1)
 bullPBRequireTouchEF    = input.bool(false, "Bull PB: require pullback touch EMAfast or bullLevel", group=grpBull)
 bullPBMaxExtAboveEma_ATR = input.float(1.20, "Bull PB: max extension above EMAfast (ATR) to allow PB", group=grpBull, step=0.05)
 bullPBMinPullback_ATR    = input.float(0.60, "Bull PB: min pullback depth from trade high (ATR)", group=grpBull, step=0.05)
@@ -102,13 +102,23 @@ bullPBMaxAgeBars = input.int(
     maxval = 500
 )
 pbTS_Bars = input.int(6, "Bull PB time-stop bars", group=grpBull, minval=1)
-// --- PB stall-cluster scoring + veto (NEW) ---
+// --- PB stall-cluster scoring + veto (NEW)  ---
 bullPB_MinScore = input.int(1, "Bull PB: min score (stall score)", group=grpBull, minval=0, maxval=1)
-
+bdImpDelayMinBodyPct  = input.float(0.50, "BD PB impulse-delay confirm: min bodyPct", group=grpBull, step=0.05, minval=0.0, maxval=1.0)
+bdImpDelayMinCloseLoc = input.float(0.60, "BD PB impulse-delay confirm: min closeLoc", group=grpBull, step=0.05, minval=0.0, maxval=1.0)
+bdImpDelayMaxDepthATR = input.float(2.80, "BD PB impulse-delay confirm: max PB depth ATR", group=grpBull, step=0.05, minval=0.0, maxval=10.0)
 bullPBStallLookback     = input.int(8,  "Bull PB: stall lookback bars",        group=grpBull, minval=3, maxval=20)
 bullPBStallMinCount     = input.int(5,  "Bull PB: stall min bars (cluster)",   group=grpBull, minval=2, maxval=20)
 bullPBStallBodyATR      = input.float(0.25, "Bull PB: stall body <= x * ATR",  group=grpBull, step=0.05, minval=0.05, maxval=1.0)
 bullPBStallNeedHighFail = input.bool(true, "Bull PB: stall requires HH progress fail", group=grpBull)
+
+// --- PB direct stale-expansion veto (cross-coin) ---
+bullPBUseDirectExpAgeVeto = input.bool(true, "Bull PB: direct stale-expansion veto", group=grpBull)
+bullPBDirectExpAgeBars    = input.int(10, "Bull PB direct veto: ExpAge >=", group=grpBull, minval=1, maxval=100)
+bullPBDirectAgeBars       = input.int(4, "Bull PB direct veto: bull age >=", group=grpBull, minval=0, maxval=200)
+bullPBUseExpDepthVeto   = input.bool(true, "Bull PB: veto stale + deep pullbacks", group=grpBull)
+bullPBExpDepthExpBars   = input.int(8, "Bull PB stale+deep veto: ExpAge >=", group=grpBull, minval=1, maxval=100)
+bullPBExpDepthMinATR    = input.float(2.0, "Bull PB stale+deep veto: Depth ATR >=", group=grpBull, step=0.05, minval=0.0, maxval=20.0)
 // --- PB Failed-Continuation veto (NEW) ---
 bullPBUseLateFail            = input.bool(true, "PB Failed-Continuation veto", group=grpBull)
 bullPBLateFailMinImpAgeBars  = input.int(4, "Bull PB: late-fail min impulse-age bars", group=grpBull, minval=1, maxval=200)
@@ -121,19 +131,46 @@ bullPBFreshMinAgeBars    = input.int(24,     "Apply only if bull age >= bars",  
 bullPBUseExpAge          = input.bool(true,  "PB use Expansion-Age veto", group=grpBull)
 bullPBMaxExpAgeBars      = input.int(18,     "PB max bars since last expansion", group=grpBull, minval=1)
 
+bullPBUseWeakExpWindowVeto = input.bool(true, "PB veto: weak ExpAge window", group=grpBull)
+bullPBWeakExpWindowMinBars = input.int(5, "PB veto: weak ExpAge min bars", group=grpBull, minval=0, maxval=500)
+bullPBWeakExpWindowMaxBars = input.int(6, "PB veto: weak ExpAge max bars", group=grpBull, minval=0, maxval=500)
+
+// --- PB Accept-window + HTF_OFF veto (Phase 3C) ---
+bullPBUseAcceptHtfOffVeto = input.bool(true, "PB veto: accept window + HTF_OFF", group=grpBull)
+bullPBAcceptHtfOffMinCnt  = input.int(6, "PB veto: accept count min", group=grpBull, minval=0, maxval=500)
+bullPBAcceptHtfOffMaxCnt  = input.int(7, "PB veto: accept count max", group=grpBull, minval=0, maxval=500)
+
 // --- PB Late-ExpAge + Weak Candle veto (Candidate) ---
 // VETO if bullPBExpAgeBars >= N AND bodyPct <= X
 bullPBUseLateExpAgeBodyVeto = input.bool(true, "PB veto: late ExpAge + weak candle", group=grpBull)
 bullPBLateExpAgeBars_VetoN   = input.int(60, "PB veto: ExpAge bars >=", group=grpBull, minval=1, maxval=500)
 bullPBLateBodyPct_VetoMax    = input.float(0.70, "PB veto: bodyPct <=", group=grpBull, step=0.05, minval=0.0, maxval=1.0)
+bullPBUseEarlyHighCloseVeto  = input.bool(true, "PB veto: early-age + high closeLoc", group=grpBull)
+bullPBEarlyHighCloseMaxAge   = input.int(4, "PB veto: early-age max bars", group=grpBull, minval=0, maxval=50)
+bullPBEarlyHighCloseLocMin   = input.float(0.80, "PB veto: early-age closeLoc >=", group=grpBull, step=0.01, minval=0.05, maxval=0.99)
+bullPBPostTP0CollapseOn      = input.bool(true, "PB runner: post-TP0 bar1 collapse", group=grpBull)
+bullPBPostTP0CollapsePct     = input.float(-1.50, "PB runner: post-TP0 bar1 closePct <=", group=grpBull, step=0.01)
+// --- PB Regime Permission gate (Phase 1, log-derived) ---
+// Allow PB only in clearly valid continuation context.
+bullPBUseRegimeGate        = input.bool(true,  "Bull PB: use regime permission gate", group=grpBull)
+bullPBGateStrongAdxMin     = input.float(42.0, "Bull PB gate: strong ADX min", group=grpBull, step=0.5)
+bullPBGateFreshImpMaxBars  = input.int(1,      "Bull PB gate: fresh impulse-age max bars", group=grpBull, minval=0, maxval=20)
+bullPBGateDistBullMinATR   = input.float(2.40, "Bull PB gate: decisive dist above bullLevel ATR min", group=grpBull, step=0.05)
+bullPBGateDeepResetMinATR  = input.float(1.80, "Bull PB gate: deep reset ATR min", group=grpBull, step=0.05)
+bullPBGateDeepResetAdxMin  = input.float(35.0, "Bull PB gate: ADX min for deep reset branch", group=grpBull, step=0.5)
+
+// --- PB Regime carve-out: deep older reset (delta refinement) ---
+// Restore only the narrow subset of PB trades that v7.63's regime gate appears to have blocked
+bullPBGateRestoreDeepResetATR = input.float(2.80, "Bull PB gate: restore deep reset ATR >=", group=grpBull, step=0.05)
+bullPBGateRestoreExpAgeMin    = input.int(4,      "Bull PB gate: restore min expansion-age bars", group=grpBull, minval=0, maxval=100)
 
 // --- Bull Acceptance-Compression entry (no PB) ---
 bullCompOn = input.bool(true, "Bull COMP: enable acceptance-compression entry", group=grpBull)
 bullCompMaxBodyPct = input.float(0.45, "Bull COMP: max body/range (compression)", group=grpBull, step=0.05)
-bullCompCloseNearHighMin = input.float(0.60, "Bull COMP: close in top X of range", group=grpBull, step=0.05)
+bullCompCloseNearHighMin = input.float(0.66, "Bull COMP: close in top X of range", group=grpBull, step=0.05)
 bullCompHold_ATR = input.float(0.10, "Bull COMP: low must hold bullLevel - ATR*x", group=grpBull, step=0.05)
 bullCompMaxExt_ATR = input.float(0.60, "Bull COMP: max extension above bullLevel (ATR)", group=grpBull, step=0.05)
-
+bullCompMaxRngAtr = input.float(0.834082741, "Bull COMP: max range/ATR", group=grpBull, step=0.000001, minval=0.05)
 bullTrailOn      = input.bool(true, "Bull runner: trail ON", group=grpBull)
 bullTrailUseSlow = input.bool(true, "Bull runner: trail EMA Slow (else EMA Fast)", group=grpBull)
 bullTrailBuf_ATR = input.float(0.10, "Bull runner: buffer under EMA (ATR*x)", group=grpBull, step=0.05)
@@ -168,7 +205,6 @@ bullStartWindowBars   = input.int(1, "Bull START: allow within N bars after acce
 bullPB_ExecADXMin = input.float(18, "Bull PB EXEC: require ADX >=", group=grpADX, step=0.5)
 bullAddCloseNearHigh = input.float(0.70, "Bull ADD: close in top X of range", group=grpBull, step=0.05)
 
-
 // Conditional invalidation (tight early, looser after TP1)
 bullInvAfterTP1Need2Cl = input.bool(true,  "Bull invalidation AFTER TP1: require 2 closes", group=grpBull)
 bullInvAfterTP1Buf_ATR = input.float(0.10, "Bull invalidation AFTER TP1: buffer (ATR*x)", group=grpBull, step=0.05)
@@ -178,7 +214,6 @@ raBalMaxWidth_ATR  = input.float(3.00, "Balance max width (ATR*x)", group=grpRA,
 raBalMaxEMASep_ATR = input.float(0.60, "Balance max EMA separation (ATR*x)", group=grpRA, step=0.05)
 raDisc_ATR         = input.float(0.35, "Discount below rollLow (ATR*x)", group=grpRA, step=0.05)
 raDiscLookback     = input.int(12, "Discount must occur within N bars", group=grpRA, minval=1)
-raModeGraceBars = input.int(6, "Range-A mode grace bars after discount (when balance breaks)", group=grpRA, minval=0)
 raStop_ATR         = input.float(0.45, "Stop buffer (ATR*x)", group=grpRA, step=0.05)
 raMaxEntryAboveLow_ATR = input.float(1.15, "RA: entry must be <= DL_low + ATR*x", group=grpRA, step=0.05)
 raUseNearLow = input.bool(true, "RA: enforce near-low entry (hard veto)", group=grpRA)
@@ -188,7 +223,6 @@ raRiskFallbackToDL = input.bool(true, "RA: if StructLow risk too big, gate risk 
 raStructStopMaxGap_ATR = input.float(0.80, "RA: if StructLow is > ATR*x below DL_low, use DL_low stopbase", group=grpRA, step=0.05)
 raMinRR_ToMid  = input.float(0.45, "RA: min RR to Mid", group=grpRA, step=0.05)
 raMinRR_Hard = input.float(0.20, "RA: min RR HARD floor (execution)", group=grpRA, step=0.05)
-raUseRRGate = input.bool(true, "RA: enforce RR-to-mid (hard veto)", group=grpRA)
 raStopNeed2Cl      = input.bool(true, "RA stop requires 2 closes below", group=grpRA)
 raExecNeed2Cl = input.bool(false, "RA EXEC: require 2 closes above DL_low (else 1-close reclaim)", group=grpRA)
 raTS_Bars          = input.int(1, "RA time-stop bars", group=grpRA, minval=1)
@@ -211,7 +245,6 @@ rbConfirmBars      = input.int(10, "New balance confirm bars", group=grpRB, minv
 rbBalMaxWidth_ATR  = input.float(2.50, "New balance max width (ATR*x)", group=grpRB, step=0.25)
 rbBalMaxEMASep_ATR = input.float(0.70, "New balance max EMA separation (ATR*x)", group=grpRB, step=0.05)
 rbTS_Bars          = input.int(36, "RB time-stop bars (highest priority)", group=grpRB, minval=5)
-rbTarget_ATR       = input.float(0.75, "RB Target1 (ATR*x)", group=grpRB, step=0.25)
 
 // --- Range-B SHORT execution (Commit S2) ---
 rbShortOn          = input.bool(false, "Range-B: enable SHORT entries (down re-anchor)", group=grpRB)
@@ -232,8 +265,6 @@ rbS_InvBuf_ATR     = input.float(0.10, "RB SHORT invalidation buffer (ATR*x)", g
 grpBear="Bear (Acceptance-down v1.3)"
 bearBuf_ATR      = input.float(0.45, "Break/accept buffer (ATR*x)", group=grpBear, step=0.05)
 bearNeed2Cl      = input.bool(true, "Accept-down requires 2 closes", group=grpBear)
-bearEarly_On     = input.bool(true,  "Early entry on 1st close below break (pre-accept)", group=grpBear)
-bearEarly_QtyPct = input.int(100, "Early entry qty % (if pyramiding=0 keep 100)", minval=1, maxval=100, group=grpBear)
 
 bearLockoutBars  = input.int(6, "Bear lockout bars after accept (flat)", group=grpBear, minval=0)
 bearKillUseHTFveto = input.bool(true, "Bear kill-switch requires HTF OFF (v2.7 default)", group=grpBear)
@@ -290,15 +321,30 @@ bearBD_WeakCloseSlopeOn = input.bool(true, "Bear breakdown (HTF_OFF): veto middl
 bearBD_WeakCloseLocMax = input.float(0.15, "Bear breakdown (HTF_OFF): weak-close threshold for slope veto", group=grpBear, step=0.01, minval=0.01, maxval=0.99)
 bearBD_WeakCloseSlopeMin = input.float(3.00, "Bear breakdown (HTF_OFF): minimum ADX slope when closeLoc > threshold", group=grpBear, step=0.10)
 bearBD_WeakCloseSlopeBandMax = input.float(0.19, "Bear breakdown (HTF_OFF): upper closeLoc bound for slope veto band", group=grpBear, step=0.01, minval=0.01, maxval=0.99)
+bearBD_OffStretchWeakOn = input.bool(true, "Bear breakdown (HTF_OFF): veto stretched weak-slope breakdowns", group=grpBear)
+bearBD_OffStretchWeak_CloseLocMin = input.float(0.30, "Bear breakdown (HTF_OFF): veto if closeLoc >=", group=grpBear, step=0.01, minval=0.01, maxval=0.99)
+bearBD_OffStretchWeak_DistEFMin   = input.float(2.00, "Bear breakdown (HTF_OFF): veto if |close-EMAfast|/ATR >=", group=grpBear, step=0.05, minval=0.10)
+bearBD_OffStretchWeak_AdxSlopeMax = input.float(1.60, "Bear breakdown (HTF_OFF): veto if ADX slope <=", group=grpBear, step=0.10)
 bearMinBodyPct     = input.float(0.20, "Bear SHORT: breakdown candle body/range >=", group=grpBear, step=0.05)
 bearBreakLookback  = input.int(9, "Bear SHORT: breakdown must break last N-bar low", group=grpBear, minval=3)
 
 bearArmMaxBars     = input.int(14, "Bear SHORT: expire retest in N bars", group=grpBear, minval=3)
 bearTS_Bars        = input.int(24, "Bear SHORT time-stop bars", group=grpBear, minval=5)
 bearTS_MinMFE_ATR  = input.float(0.30, "Bear TS only if MFE < ATR*x", group=grpBear, step=0.05)
+bearTS_ProgOn          = input.bool(true, "Bear TS: progressive early exit", group=grpBear)
+bearTS_Chk1_Bars       = input.int(14, "Bear TS: checkpoint 1 bars", group=grpBear, minval=5)
+bearTS_Chk1_Prog       = input.float(0.25, "Bear TS: min TP0 progress @ chk1", group=grpBear, step=0.05)
+
+bearTS_Chk2_Bars       = input.int(15, "Bear TS: checkpoint 2 bars", group=grpBear, minval=8)
+bearTS_Chk2_Prog       = input.float(0.40, "Bear TS: min TP0 progress @ chk2", group=grpBear, step=0.05)
+
+bearTS_Chk3_Bars       = input.int(20, "Bear TS: checkpoint 3 bars", group=grpBear, minval=10)
+bearTS_Chk3_Prog       = input.float(0.60, "Bear TS: min TP0 progress @ chk3", group=grpBear, step=0.05)
 bearBD_PreTP0TimeoutOn   = input.bool(true, "Bear breakdown: pre-TP0 timeout exit", group=grpBear)
 bearBD_PreTP0TimeoutBars = input.int(28, "Bear breakdown: exit if TP0 not reached within N bars", group=grpBear, minval=5)
-
+bearPreTP0StaleOn        = input.bool(true, "Bear short: pre-TP0 stale/non-performance exit", group=grpBear)
+bearPreTP0StaleBars      = input.int(18, "Bear short: stale check after N bars", group=grpBear, minval=5)
+bearPreTP0MinTP0Frac     = input.float(0.55, "Bear short: min TP0 progress fraction by stale check", group=grpBear, step=0.05, minval=0.05, maxval=1.50)
 // --- BEAR_S_ACCEPT: ONLY veto low-vol weak accepts when HTF is OFF ---
 bearAccOff_RngAtrMax      = input.float(2.00, "BEAR ACCEPT (HTF_OFF): Range/ATR <= X", group=grpBear, step=0.05)
 bearAccOff_CloseLocMin    = input.float(0.14, "BEAR ACCEPT (HTF_OFF): closeLoc >= X veto", group=grpBear, step=0.01, minval=0.01, maxval=0.60)
@@ -321,8 +367,17 @@ bearProt0Buf_ATR  = input.float(0.05, "Bear post-TP0 protect: stop above entry (
 bearProt0Need2Cl  = input.bool(false, "Bear post-TP0 protect: require 2 closes", group=grpBear)
 bearProtBuf_ATR   = input.float(0.10, "Bear post-TP1 protect: stop above entry (ATR*x)", group=grpBear, step=0.05)
 bearProtNeed2Cl   = input.bool(true, "Bear post-TP1 protect: require 2 closes", group=grpBear)
+
 bearTrailOn       = input.bool(true,  "Bear post-TP1: enable EMA trail (runner)", group=grpBear)
 bearTrailBuf_ATR  = input.float(0.25, "Bear post-TP1: EMA trail buffer (ATR*x)",  group=grpBear, step=0.05)
+
+// Phase B1 revision: tighten only on mature rebound (-4 timing), not onset
+bearTrailTightenOn          = input.bool(true,  "Bear post-TP1: tighten trail on mature rebound", group=grpBear)
+bearTrailTightBuf_ATR       = input.float(0.12, "Bear post-TP1: tightened EMA trail buffer (ATR*x)", group=grpBear, step=0.05)
+bearTrailTightCloseLocMin   = input.float(0.60, "Bear post-TP1 tighten: current bar min closeLoc", group=grpBear, step=0.01, minval=0.05, maxval=0.95)
+bearTrailTightBodyPctMin    = input.float(0.45, "Bear post-TP1 tighten: current bar min bodyPct", group=grpBear, step=0.05, minval=0.05, maxval=0.95)
+bearTrailTightMinUpBars4    = input.int(3,      "Bear post-TP1 tighten: min up-closes in last 4 bars", group=grpBear, minval=1, maxval=4)
+bearTrailTightStrongBars4   = input.int(2,      "Bear post-TP1 tighten: min strong rebound bars in last 4", group=grpBear, minval=1, maxval=4)
 
 bearInvNeed2Cl     = input.bool(true, "Bear SHORT invalidation: require 2 closes above bearReclLvl", group=grpBear)
 bearAdxMin        = input.float(20, "Bear SHORT: require ADX >=", group=grpBear, step=0.5)
@@ -331,7 +386,6 @@ bearBD_LateAllow      = input.bool(true,  "Bear breakdown: allow late entries on
 bearBD_LateBodyPctMin = input.float(0.65, "Bear breakdown late: min bodyPct", group=grpBear, step=0.01, minval=0.05, maxval=0.95)
 bearBD_LateCloseLocMin= input.float(0.80, "Bear breakdown late: min closeLoc", group=grpBear, step=0.01, minval=0.05, maxval=0.99)
 bearBD_FreshNoPB_Allow   = input.bool(true, "Bear breakdown: allow NO-PB only right after bear accept", group=grpBear)
-bearBD_FreshNoPB_BarsMax = input.int(12, "Bear breakdown NO-PB: max bars since bear acceptance", group=grpBear, minval=1)
 
 rbUseSnapshotAccept = input.bool(true, "RB attempt acceptance uses snapshot (strict)", group=grpRB)
 
@@ -339,28 +393,23 @@ grpTS="Time-stop downgrades"
 downgradeBars = input.int(10, "Downgrade hold bars (after time-stop)", group=grpTS, minval=0)
 
 grpVis="Visual"
-showModeBg     = input.bool(true, "Background by mode", group=grpVis)
 showRegimeBg   = input.bool(true, "Background by regime (full chart)", group=grpVis)
 regimeBgAlpha  = input.int(90, "Regime BG opacity (0=solid,100=none)", group=grpVis, minval=0, maxval=100)
 regimeUseRaw   = input.bool(true, "Use RAW regime states (not router mode)", group=grpVis)
 showExecMarks  = input.bool(true, "Show EXEC markers", group=grpVis)
-showDebugPlots = input.bool(true, "Show DEBUG plots", group=grpVis)
-showLogTable   = input.bool(false, "Show trade log table", group=grpVis)
 
 grpObs="Observability"
 showModeLabel   = input.bool(true, "Show mode label (last bar)", group=grpObs)
-showRegimeMarks = input.bool(true, "Show Range-A / Range-B regime markers", group=grpObs)
 showRegimeFlipLabels = input.bool(true, "Show regime START/END labels", group=grpObs)
 regimeLabelOnlyOnClose = input.bool(true, "Regime labels only on confirmed bars", group=grpObs)
 regimeMinBars = input.int(2, "Min bars to confirm new regime before labeling", group=grpObs, minval=1, maxval=10)
-bullStartStyle = input.string("UP",  "Bull START label style", group=grpObs, options=["UP","LEFT"])
-bullEndStyle   = input.string("LEFT","Bull END label style",   group=grpObs, options=["LEFT","DOWN"])
 
 //====================================================
 // Logs (Layer 1 export)
 //====================================================
 grpLogs="Logs"
 exportToLogs = input.bool(false, "Export to Logs", group=grpLogs)
+exportLifecycle = input.bool(false, "Export lifecycle logs", group=grpLogs)
 
 grpLog = "Logging"
 logTZ = input.string("Europe/Sofia", "Log timezone", group=grpLog)
@@ -375,15 +424,23 @@ l2OverlapN   = input.int(8,  "L2 overlap N", group=grpLogs, minval=2, maxval=50)
 l2RangeN     = input.int(20, "L2 range width N", group=grpLogs, minval=5, maxval=200)
 l2VolN       = input.int(20, "L2 volatility baseline N", group=grpLogs, minval=5, maxval=200)
 
-
-
-
 grpDiag="Diagnostics"
-showDiagHUD = input.bool(true, "Show ADX Diagnostics HUD", group=grpDiag)
-showBlockLabels = input.bool(false, "Show labels ONLY when entry is blocked", group=grpDiag)
-dbgPBProbe = input.bool(false, "DBG: PBDBG to Logs (PB candidates)", group=grpDiag)
-dbgPBProbeIncludeBlocked = input.bool(true, "DBG: PBDBG include BLOCKED candidates", group=grpDiag)
+dbgPBProbe = input.bool(true, "DBG: PBDBG to Logs (PB candidates)", group=grpDiag)
 
+
+// PROFILE_BREAKDOWN_DRIFT — BULL_INIT_EARLY (family-local offensive participation path)
+bool  bdBullInitEarlyOn              = true
+int   bdBullInitEarlyMinPBAge        = 2
+int   bdBullInitEarlyMaxPBAge        = 5
+int   bdBullInitEarlyMinImpAge       = 2
+int   bdBullInitEarlyMaxImpAge       = 6
+int   bdBullInitEarlyMaxNoNewHi      = 2
+
+// PROFILE_BREAKDOWN_DRIFT-specific containment
+bool  eff_bearDriftNonProofReclaimOn     = true
+float eff_bearDriftNonProofMaxMfePct     = 1.0
+int   eff_bearDriftNonProofMinReclaimRel = 9
+int   eff_bearDriftNonProofMaxReclaimRel = 16
 
 //====================================================
 // Precompute
@@ -426,7 +483,7 @@ bodyPct = math.abs(close - open) / rng
 var bool raDiscRecent = false
 
 
-// HTF veto
+// HTF veto 
 htfEmaFast = request.security(syminfo.tickerid, htfTF, ta.ema(close, htfFastLen))
 htfEmaSlow = request.security(syminfo.tickerid, htfTF, ta.ema(close, htfSlowLen))
 htfClose   = request.security(syminfo.tickerid, htfTF, close)
@@ -440,8 +497,6 @@ if barstate.isconfirmed and htfTrendOk and (not htfNeutral)
 shortCooldownOk = (shortCooldownAfterHTFBullBars <= 0) or na(lastHTFBullBar) or ((bar_index - lastHTFBullBar) > shortCooldownAfterHTFBullBars)
 
 htfOffForRA = (not htfTrendOk) or (raAllowHTFNeutral and htfNeutral)
-// Bull is allowed on HTF-neutral ONLY if Range-A context is NOT active.
-// This prevents Bull from stealing RA during neutral, but avoids "dead" neutral periods.
 htfBullOk = htfTrendOk and (not htfNeutral or not (raAllowHTFNeutral and raDiscRecent))
 //====================================================
 // HTF state + HTF flip event (for logs)
@@ -450,7 +505,6 @@ htfOnNow = htfTrendOk and (not htfNeutral)   // strict HTF_ON (neutral treated a
 var bool   htfOnPrev = false
 var bool   htfOnPrevInit = false
 var string htfFlipEventNow = "NONE"          // "HTF_ON","HTF_OFF","NONE"
-var int    htfFlipBar = na
 
 if barstate.isconfirmed
     if not htfOnPrevInit
@@ -460,7 +514,6 @@ if barstate.isconfirmed
     else
         if htfOnNow != htfOnPrev
             htfFlipEventNow := htfOnNow ? "HTF_ON" : "HTF_OFF"
-            htfFlipBar := bar_index
             htfOnPrev := htfOnNow
         else
             htfFlipEventNow := "NONE"
@@ -551,11 +604,9 @@ bearCloseNearLowOk =
      (htfOnNow or closeLoc <= bearBD_Off_CloseLocMax)
 rbCloseNearLowOk   = closeLoc <= rbShortCloseNearLo
 
-
-
-inPos   = strategy.position_size != 0
-isLong  = strategy.position_size > 0
-isShort = strategy.position_size < 0
+inPos   = posSize != 0
+isLong  = posSize > 0
+isShort = posSize < 0
 
 //====================================================
 // Mode enum + helpers
@@ -576,24 +627,11 @@ modeToStr(m) =>
         s := "RANGE-B"
     s
 
-lblStyle(_s) => _s == "UP" ? label.style_label_up : _s == "DOWN" ? label.style_label_down : label.style_label_left
-
-
-
-
-//====================================================
-// Persistent state (router + engines)
-//====================================================
-
 // Position origin tag
 var string posTag = ""   // "", "BULL", "RANGEA", "RANGEB"
 
 // Persistent entry-origin label used for exit logging (Strategy v1.0 requirement)
 var string entryModeTag = ""  // "", "BULL", "RANGE-A", "RANGE-B"
-
-// --- Entry reason tagging (debug-safe, affects only comments) ---
-var string lastEntryReason = ""
-
 
 // Map posTag storage format to log format
 posTagToLogMode(_tag) =>
@@ -608,9 +646,38 @@ posTagToLogMode(_tag) =>
         m := "BEAR"
     m
 
-
 logModeNow() =>
     entryModeTag != "" ? entryModeTag : posTagToLogMode(posTag)
+
+f_bullLaunchConfirmNow(
+    bool _bullArmed,
+    bool _bullPBSeen,
+    bool _bullImpulseDone,
+    bool _bullCompArmed,
+    int _bullArmedBar,
+    float _bullBreakLvl,
+    float _bullLevel,
+    int _bullLegNoNewHiStreak,
+    int _minBars,
+    int _maxBars,
+    int _maxNoNewHi
+) =>
+    int _barsFromArm = (_bullArmed and (not na(_bullArmedBar))) ? (bar_index - _bullArmedBar) : 999999
+    bool _windowOk =
+         _bullArmed and
+         (not _bullPBSeen) and
+         (not _bullImpulseDone) and
+         (not _bullCompArmed) and
+         (_barsFromArm >= _minBars) and
+         (_barsFromArm <= _maxBars)
+    bool _breakOk =
+         (not na(_bullBreakLvl)) and
+         (close > _bullBreakLvl) and
+         (close > _bullLevel) and
+         (close > open)
+    bool _structureOk =
+         _bullLegNoNewHiStreak <= _maxNoNewHi
+    _windowOk and _breakOk and _structureOk
 
 //====================================================
 // L2 feature state (bars-since trackers)
@@ -636,7 +703,6 @@ var int   bearStartBar = na
 var float bearStartY   = na
 var int   bearEndBar   = na
 var float bearEndY     = na
-var int bearFreshNoPBUsedAccBar = na   // one-shot latch per bear acceptance
 
 // BEAR_S_ACCEPT climax-delay state (only used when acceptance candle is liquidation-like)
 var bool  bearAccClimaxPend   = false
@@ -652,9 +718,7 @@ var int bearEntryArch = na
 var float bearReclLvlPos = na
 var float bearEmaFastPos = na
 //====================================================
-// BEAR diagnostics masks (LOG ONLY; no behavior impact)
-// allowMask: which “good” gates were true
-// vetoMask : which “blocking” conditions were true
+// BEAR diagnostics masks 
 //====================================================
 int bearAllowMaskNow = 0
 bearAllowMaskNow += bearShortADXOk ? 1 : 0              // bit 0: ADX ok
@@ -700,7 +764,11 @@ var int   pendingBullBar= na
 var bool  bullArmed     = false
 var int   bullArmedBar  = na
 var bool  bullPBSeen    = false
-var int   bullPBBar     = na
+var int   bullNonRetryBlockedReclaimBar = na
+const int BULL_NONRETRY_RECLAIM_CARRY_BARS = 1
+const int BULL_LAUNCH_CONFIRM_MIN_BARS = 2
+const int BULL_LAUNCH_CONFIRM_MAX_BARS = 3
+const int BULL_LAUNCH_MAX_NO_NEW_HI_STREAK = 1
 var float bullPBLow     = na
 var float bullStructLow = na
 var int   bullStartBar = na
@@ -712,23 +780,49 @@ var int   bullEndBar   = na
 var float bullEndY     = na
 var bool bullTP1Done = false
 var bool bullTP0Done = false
+var int bullTP0Bar = na
+var float bullTP0Hi = na
+
+// TP0-bar discriminator snapshot (latched on BULL_TP0)
+var float bullTP0BarOpen = na
+var float bullTP0BarHigh = na
+var float bullTP0BarLow = na
+var float bullTP0BarClose = na
+var float bullTP0BarATR = na
+var float bullTP0BarBodyPct = na
+var float bullTP0BarCloseLoc = na
+var float bullTP0BarDistEFATR = na
+var float bullTP0BarDistESATR = na
+var bool bullTP0WeakQuality = false
+
+var bool bullPBDelayedProofPending = false
+var bool bullPBDelayedProofValidated = false
+var int bullPBDelayedProofBar = na
+var float bullPBDelayedProofHi = na
 var bool bearTP1Done = false 
 var bool bearTP0Done = false 
 var int bearTP0Bar = na 
 var float bearTP0Lo = na 
 var float bearTP0EntryPx = na
-var int bullNoNewHiStreak = 0
 var int bullLastAddBar = na
 var float bullAddRefHi = na   // last add/entry reference high-water mark
 var float bullHH = na
-var int   bullHHBar = na
-var float bullArmRollHigh = na   // Option C: rollHigh snapshot at arm (accept-up)
+var bool  bullCompArmed = false
+var int   bullCompArmBar = na
+var float bullCompHi = na
 
 // --- PB Freshness state ---
 var int bullLastMajorImpulseBar = na
 // --- PB Retry-after-Impulse-Chase latch (blocks retry PBs on same impulse after impulse-chase veto) ---
 var int  pbChaseFailKey    = na
 var bool pbChaseFailActive = false
+
+// PROFILE_BREAKDOWN_DRIFT — PB impulse-chase delayed confirmation state
+var bool  bullPBImpDelayArmed = false
+var int   bullPBImpDelayBar   = na
+var float bullPBImpDelayHigh  = na
+var float bullPBImpDelayLow   = na
+var int   bullPBImpDelayMask  = na
 
 float bullTrailLevel = na
 // --- Bull impulse entry one-shot latch ---
@@ -757,8 +851,19 @@ var int   L1_bsaEnt        = na
 var int   L1_bsrEnt        = na
 
 var int   L1_addCount      = 0
+var bool  L1_tp0Hit        = false
+var int   L1_tp0Bar        = na
 var bool  L1_tp1Hit        = false
-var bool  L1_trailEver     = false
+var int   L1_tp1Bar        = na
+
+// SPS dead-BULL_PB tracker
+var bool  pbSpsArmed = false
+var int   pbSpsBar = na
+var float pbSpsBestHi = na
+var float pbSpsStopLo = na
+var float pbSpsMinLo = na
+var float pbSpsStopClose = na
+var int   pbSpsHH = 0, pbSpsRec = 0
 
 // ---- PB ENTRY SNAPSHOT (latched at PB fill; na for non-PB trades) ----
 var int L1_pbVetoMaskEnt         = na
@@ -853,13 +958,80 @@ var float rbAttOldLow  = na
 var float rbAttOldHigh = na
 var float rbAttOldMid  = na
 
-
 // ---- Trade tracking for time-stops and MFE
-var int   lastEntryBar = na
-var float tradeHi      = na
-var float tradeLo      = na
+var int   lastEntryBar              = na
+var float tradeHi                   = na
+var float tradeLo                   = na
+var float bearOpenProfitMax         = na
+var int   bearDriftReclaimCloseCnt  = 0
 
+//====================================================
+// PROFILE_BREAKDOWN_DRIFT — ENA-like PB pre-BULL_INV harvest state
+// Scoped only to BULL_PB continuation-failure subgroup
+//====================================================
+var bool  pbPreInvTrackActive        = false
+var bool  pbPreInvEligible           = false
+var bool  pbPreInvArmed              = false
 
+var int   pbPreInvEligBar            = na
+var int   pbPreInvBarsAfterElig      = 0
+
+var float pbPreInvStartHigh          = na
+var float pbPreInvHighAfterElig      = na
+var float pbPreInvLowAfterElig       = na
+
+var int   pbPreInvNoNewHiStreak      = 0
+var int   pbPreInvStallCount         = 0
+var int   pbPreInvRejectCount        = 0
+
+//====================================================
+// PROFILE_BREAKDOWN_DRIFT — Wave 1 long hold/maturity state
+// HOLD_CONT + MATURITY_EXIT (long-side only)
+//====================================================
+var bool  pd_holdContActive        = false
+
+var int   pd_holdEntryBar          = na
+var int   pd_holdBarsIn            = 0
+
+var float pd_lastContHigh          = na
+var int   pd_lastContHighBar       = na
+var int   pd_barsSinceContHigh     = na
+
+var float pd_pullbackLowSinceHigh  = na
+var float pd_pullbackDepthATR      = na
+
+var int   pd_noNewHighStreak       = 0
+
+var bool  pd_recentExpansionAlive  = false
+
+// BD post-TP0 BULL_INV persistence filter
+var int bullInvPostTP0Streak = 0
+
+// ---- Close-based bull stall tracking ----
+var float bullBestClose = na
+var int   bullNoNewCloseStreak = 0
+
+//====================================================
+// PROFILE_BREAKDOWN_DRIFT — ENA-like PB pre-BULL_INV harvest constants
+//====================================================
+float pbPreInvNearHighATR       = 0.30
+float pbPreInvMinLifeATR        = 0.35
+float pbPreInvGivebackATR       = 0.90
+float pbPreInvUpperRejectFrac   = 0.40
+float pbPreInvStallBodyPctMax   = 0.55
+float pbPreInvCloseLocMax       = 0.60
+
+int   pbPreInvArmMinBars        = 4
+int   pbPreInvNoNewHiBars       = 5
+int   pbPreInvRejectNeed        = 2
+int   pbPreInvStallNeed         = 2
+
+//====================================================
+// PROFILE_BREAKDOWN_DRIFT — Wave 1 constants
+//====================================================
+float pdNearHighATR             = 0.35
+float pdHealthyPullbackATR      = 1.10
+int   pdRecentHighBars          = 2
 
 // Defer resets until we are truly flat (calc_on_every_tick safety)
 var bool pendingReset = false
@@ -929,7 +1101,6 @@ bool bearACC_ReclaimExitNow = bearIsAcceptShort    and bearReclaimCloseCnt >= 2
 string L1_tf = timeframe.period
 var   string L1_runId = na                     // constant per backtest run
 var   string L1_scriptVer = na                 // strategy title/version
-var   int    L1_tradeSeq = 0                   // internal trade counter (monotonic)
 
 // Init once
 if barstate.isfirst
@@ -942,15 +1113,6 @@ if barstate.isfirst
 //------------------------------
 // L1 helpers
 //------------------------------
-
-
-L1_mfePct(_dir, _entryPx, _maxFavPx) =>
-    float q = _dir == "LONG" ? (_maxFavPx - _entryPx) : (_entryPx - _maxFavPx)
-    _entryPx != 0 ? (q / _entryPx) * 100.0 : na
-
-L1_maePct(_dir, _entryPx, _maxAdvPx) =>
-    float q = _dir == "LONG" ? (_entryPx - _maxAdvPx) : (_maxAdvPx - _entryPx)
-    _entryPx != 0 ? (q / _entryPx) * 100.0 : na
 
 endsWith(string s, string suf) =>
     ls = str.length(s)
@@ -1009,10 +1171,6 @@ var int    L1_qualMaskEnt  = 0
 
 
 var int    L1_entryTime = na
-var float  L1_entryPx   = na
-var float  L1_entrySize = na
-var float  L1_entryEq   = na
-var float  L1_entryNP   = na
 var int    L1_entryBar  = na
 
 // Max favorable / adverse tracking
@@ -1026,6 +1184,13 @@ var bool   L1_exitPending = false
 var string L1_exitReason  = ""
 var int    L1_exitOutcome = na
 
+// ---- Lifecycle logger state (separate from L1/L2) ----
+var bool   LC_tradeLogActive  = false
+var int    LC_activeTradeId   = na
+var int    LC_entryBarIndex   = na
+var int    LC_entryTimeMs     = na
+var string LC_pendingExitReason = ""
+
 // ---- L1 partial-exit aggregates (kept per full trade) ----
 var int    L1_nPartials         = 0
 var float  L1_partialPctSum     = 0.0
@@ -1034,10 +1199,6 @@ var int    L1_firstPartialTime  = na
 var int    L1_lastPartialBar    = na
 var int    L1_lastPartialTime   = na
 var string L1_partialReasons    = ""
-// ---- L1 realized PnL accumulator (source of truth = strategy.closedtrades.profit) ----
-var int   L1_ctPrev = 0
-var float L1_realizedPnlUsd = 0.0
-
 
 // Emit header once (only when export is ON)
 if exportToLogs and barstate.isfirst
@@ -1070,29 +1231,54 @@ if exportToLogs and barstate.isfirst
       "bsiAtEntry,bsaAtEntry,bsrAtEntry," +
 
       // ---- MONETIZATION / MANAGEMENT ----
-      "tp1Hit,trailEver,addCount," +
+      "tp1Hit,trailEver,addCount,tp0HitTrade,tp0BarIndex,tp1HitTrade,tp1BarIndex," +
       "pbVetoMaskEnt,pbMajorImpulseEnt,pbImpulseAgeBarsEnt,pbStallCountEnt,pbHighFailEnt,pbScoreEnt," +
       "pbAdxSlopeEnt,pbAgeBarsEnt,pbNoNewHiStreakEnt,pbDepthAtrEnt,pbExpAgeBarsEnt,pbTouchOkEnt,pbHHProofOkEnt," +
       "bearPendingEnt,bearActiveEnt,bearBreakLvlEnt,bearReclLvlEnt,bearReclaimCntEnt,bearPBSeenEnt,bearPBBarEnt,lastBearExitBarEnt," +
       "bearShortADXOkEnt,bearCloseNearLowEnt,bearAdxSlopeEnt,bearHtfOnEnt,bearHtfFlipEnt,bearAllowMaskEnt,bearVetoMaskEnt"
       )
 
+lc_emitLifecycleHeader() =>
+    log.info(
+      "rowType,runId,tf,scriptVer," +
+      "tradeId,coin,direction,regimeAtEntry,entryEngine," +
+      "entryBarIndex,entryDatetime,entryTimeMs," +
+      "barIndex,barDatetime,barTimeMs,relBars," +
+      "currentMode,currentPosTag,posState,positionSize,positionAvgPrice,close,tradeHi,tradeLo,openProfit,netProfit," +
+      "pendingExitReason,doExit," +
+      "bullTP0Done,bullTP1Done,bearTP0Done,bearTP1Done," +
+      "bullTP0Hit,bullTP1Hit,bearTP0Hit,bearTP1Hit," +
+      "bullTP0BarOpen,bullTP0BarHigh,bullTP0BarLow,bullTP0BarClose," +
+      "bullTP0BarATR,bullTP0BarBodyPct,bullTP0BarCloseLoc,bullTP0BarDistEFATR,bullTP0BarDistESATR," +
+      "bullPBDelayedProofPending,bullPBDelayedProofValidated," +
+      "pbRunnerNoProofExit,pbPreInvDegradeNow,bullPostTriggerTSExit," +
+      "pd_holdBarsIn,pd_noNewHighStreak," +
+      "pbPreInvArmed,pbPreInvNoNewHiStreak,pbPreInvRejectCount,pbPreInvStallCount," +
+      "bearBD_ReclaimExitNow,bearACC_ReclaimExitNow," +
+      "bearExitNow,bullMomLoss,bullCloseInvalid,bearInvPostTrail,bearTP0NoExtExit,bearShortInvalid,rbShortInvalid," +
+      "raStopHit,raTPHit,bearForceCloseShort,pbTimeStop,bullTimeStop,raTimeStop,bearTimeStop,rbShortTimeStop"
+    )
+
+if exportLifecycle and barstate.isfirst
+    lc_emitLifecycleHeader()
 
 // PBDBG header (separate stream; rowType=PBDBG)
 if exportToLogs and dbgPBProbe and barstate.isfirst
     log.info(
-      "rowType,runId,tf,scriptVer,coin," +
-      "pbStatus,barIndex,datetime,timeMs," +
-      "close,atr,bullLevel,emaFast," +
-      "distBullATR,distEFAtr," +
-      "pbAgeBars,bullLegNoNewHiStreak,pbDepthATR," +
-      "pbImpulseAgeBars,pbFreshVeto," +
-      "pbExtended,pbShallow,pbExhaustVeto,pbLateStallVeto,pbLifecycleVeto,pbTouchOk," +
+      "rowType,coin,barIndex,datetime,timeMs," +
+      "pbStatus," +
+      "close,open,high,low,bodyPct,atr," +
+      "bullLevel,bullBreakLvl," +
+      "closeGtBullLevel,closeGtBullBreakLvl," +
+      "scoreGateBullOk,adxBullPBExecOk,htfBullOk,bullLocalTrendOk," +
+      "bullPBSeen,bullHoldOk,bullReclaimNow,bullPBTouchOk,bullPB_HHProofOk," +
       "bullPBEnter,bullPBEnterExec," +
-      "bullStartBar,bullPBMaxAgeBars,pbAgeVeto,modeNow,bullArmedNow"
+      "bullPBScore,pbVetoMask," +
+      "pbAgeBars,pbImpulseAgeBars,bullLegNoNewHiStreak,pbDepthATR," +
+      "bullStartBar,bullPBMaxAgeBars,modeBullNow,bullArmedNow"
     )
 
-
+b01(bool x) => x ? "1" : "0"
 
 // Helper: safe datetime formatting (Pine v6)
 fmtDT(_t) =>
@@ -1110,12 +1296,375 @@ sigOrId(_comment, _id) =>
     s := str.trim(s)
     s != "" ? s : _id
 
+lc_sanitize(_s) =>
+    string s = na(_s) ? "" : _s
+    str.replace_all(s, ",", ";")
+
+lc_emitRow(
+    _rowType,
+    _tradeId,
+    _entryBarIndex,
+    _entryTimeMs,
+    _pendingExitReason,
+    _doExit,
+    _bullTP0Hit,
+    _bullTP1Hit,
+    _bearTP0Hit,
+    _bearTP1Hit,
+    _bullPBDelayedProofPending,
+    _bullPBDelayedProofValidated,
+    _pbRunnerNoProofExit,
+    _pbPreInvDegradeNow,
+    _bullPostTriggerTSExit,
+    _pd_holdBarsIn,
+    _pd_noNewHighStreak,
+    _pbPreInvArmed,
+    _pbPreInvNoNewHiStreak,
+    _pbPreInvRejectCount,
+    _pbPreInvStallCount,
+    _bearBD_ReclaimExitNow,
+    _bearACC_ReclaimExitNow,
+    _bearExitNow,
+    _bullMomLoss,
+    _bullCloseInvalid,
+    _bearInvPostTrail,
+    _bearTP0NoExtExit,
+    _bearShortInvalid,
+    _rbShortInvalid,
+    _raStopHit,
+    _raTPHit,
+    _bearForceCloseShort,
+    _pbTimeStop,
+    _bullTimeStop,
+    _raTimeStop,
+    _bearTimeStop,
+    _rbShortTimeStop
+) =>
+    int relBars = not na(_entryBarIndex) ? (bar_index - _entryBarIndex) : na
+
+    log.info(
+      lc_sanitize(_rowType) + "," +
+      lc_sanitize(L1_runId) + "," +
+      lc_sanitize(L1_tf) + "," +
+      lc_sanitize(L1_scriptVer) + "," +
+      str.tostring(_tradeId) + "," +
+      lc_sanitize(syminfo.ticker) + "," +
+      lc_sanitize(L1_dir) + "," +
+      lc_sanitize(L1_regEntry) + "," +
+      lc_sanitize(L1_entryEngine) + "," +
+      str.tostring(_entryBarIndex) + "," +
+      fmtDT(_entryTimeMs) + "," +
+      str.tostring(_entryTimeMs) + "," +
+      str.tostring(bar_index) + "," +
+      fmtDT(time) + "," +
+      str.tostring(time) + "," +
+      str.tostring(relBars) + "," +
+      lc_sanitize(logModeNow()) + "," +
+      lc_sanitize(posTagToLogMode(posTag)) + "," +
+      lc_sanitize(
+            (posSize != 0 and posSize[1] == 0) ? "OPEN" :
+            (posSize == 0 and posSize[1] != 0) ? "CLOSE" :
+            (posSize != 0) ? "HOLD" : "FLAT"
+      ) + "," +
+      str.tostring(posSize) + "," +
+      str.tostring(posAvg) + "," +
+      str.tostring(close) + "," +
+      str.tostring(tradeHi) + "," +
+      str.tostring(tradeLo) + "," +
+      str.tostring(strategy.openprofit) + "," +
+      str.tostring(strategy.netprofit) + "," +
+      lc_sanitize(_pendingExitReason) + "," +
+      str.tostring(_doExit ? 1 : 0) + "," +
+      str.tostring(bullTP0Done ? 1 : 0) + "," +
+      str.tostring(bullTP1Done ? 1 : 0) + "," +
+      str.tostring(bearTP0Done ? 1 : 0) + "," +
+      str.tostring(bearTP1Done ? 1 : 0) + "," +
+      str.tostring(_bullTP0Hit ? 1 : 0) + "," +
+      str.tostring(_bullTP1Hit ? 1 : 0) + "," +
+      str.tostring(_bearTP0Hit ? 1 : 0) + "," +
+      str.tostring(_bearTP1Hit ? 1 : 0) + "," +
+      str.tostring(bullTP0BarOpen) + "," +
+      str.tostring(bullTP0BarHigh) + "," +
+      str.tostring(bullTP0BarLow) + "," +
+      str.tostring(bullTP0BarClose) + "," +
+      str.tostring(bullTP0BarATR) + "," +
+      str.tostring(bullTP0BarBodyPct) + "," +
+      str.tostring(bullTP0BarCloseLoc) + "," +
+      str.tostring(bullTP0BarDistEFATR) + "," +
+      str.tostring(bullTP0BarDistESATR) + "," +
+      str.tostring(_bullPBDelayedProofPending ? 1 : 0) + "," +
+      str.tostring(_bullPBDelayedProofValidated ? 1 : 0) + "," +
+      str.tostring(_pbRunnerNoProofExit ? 1 : 0) + "," +
+      str.tostring(_pbPreInvDegradeNow ? 1 : 0) + "," +
+      str.tostring(_bullPostTriggerTSExit ? 1 : 0) + "," +
+      str.tostring(_pd_holdBarsIn) + "," +
+      str.tostring(_pd_noNewHighStreak) + "," +
+      str.tostring(_pbPreInvArmed ? 1 : 0) + "," +
+      str.tostring(_pbPreInvNoNewHiStreak) + "," +
+      str.tostring(_pbPreInvRejectCount) + "," +
+      str.tostring(_pbPreInvStallCount) + "," +
+      str.tostring(_bearBD_ReclaimExitNow ? 1 : 0) + "," +
+      str.tostring(_bearACC_ReclaimExitNow ? 1 : 0) + "," +
+      str.tostring(_bearExitNow ? 1 : 0) + "," +
+      str.tostring(_bullMomLoss ? 1 : 0) + "," +
+      str.tostring(_bullCloseInvalid ? 1 : 0) + "," +
+      str.tostring(_bearInvPostTrail ? 1 : 0) + "," +
+      str.tostring(_bearTP0NoExtExit ? 1 : 0) + "," +
+      str.tostring(_bearShortInvalid ? 1 : 0) + "," +
+      str.tostring(_rbShortInvalid ? 1 : 0) + "," +
+      str.tostring(_raStopHit ? 1 : 0) + "," +
+      str.tostring(_raTPHit ? 1 : 0) + "," +
+      str.tostring(_bearForceCloseShort ? 1 : 0) + "," +
+      str.tostring(_pbTimeStop ? 1 : 0) + "," +
+      str.tostring(_bullTimeStop ? 1 : 0) + "," +
+      str.tostring(_raTimeStop ? 1 : 0) + "," +
+      str.tostring(_bearTimeStop ? 1 : 0) + "," +
+      str.tostring(_rbShortTimeStop ? 1 : 0)
+    )
+
+
+
+//====================================================
+// PROFILE_BREAKDOWN_DRIFT — ENA-like PB continuation-failure tracker
+// PURE helper: returns updated PB pre-invalidation harvest state
+//====================================================
+f_pbPreInvUpdate(
+    bool _run,
+    int _barsInNow,
+    float _atr,
+    float _rng,
+    float _bodyPct,
+    float _closeLoc,
+    float _high,
+    float _low,
+    float _close,
+    bool _bullTP1Done,
+    bool _pbPreInvEligible,
+    bool _pbPreInvArmed,
+    int _pbPreInvEligBar,
+    int _pbPreInvBarsAfterElig,
+    float _pbPreInvStartHigh,
+    float _pbPreInvHighAfterElig,
+    float _pbPreInvLowAfterElig,
+    int _pbPreInvNoNewHiStreak,
+    int _pbPreInvStallCount,
+    int _pbPreInvRejectCount
+) =>
+    bool  oEligible      = _run ? _pbPreInvEligible : false
+    bool  oArmed         = _run ? _pbPreInvArmed : false
+    int   oEligBar       = _run ? _pbPreInvEligBar : na
+    int   oBarsAfterElig = _run ? _pbPreInvBarsAfterElig : 0
+    float oStartHigh     = _run ? _pbPreInvStartHigh : na
+    float oHighAfterElig = _run ? _pbPreInvHighAfterElig : na
+    float oLowAfterElig  = _run ? _pbPreInvLowAfterElig : na
+    int   oNoNewHiStreak = _run ? _pbPreInvNoNewHiStreak : 0
+    int   oStallCount    = _run ? _pbPreInvStallCount : 0
+    int   oRejectCount   = _run ? _pbPreInvRejectCount : 0
+
+    if _run
+        bool _pbEligNow = (_barsInNow >= pbTS_Bars)
+
+        if _pbEligNow and (not oEligible)
+            oEligible      := true
+            oEligBar       := bar_index
+            oBarsAfterElig := 0
+            oStartHigh     := _high
+            oHighAfterElig := _high
+            oLowAfterElig  := _low
+            oNoNewHiStreak := 0
+            oStallCount    := 0
+            oRejectCount   := 0
+
+        if oEligible
+            oBarsAfterElig := na(oEligBar) ? 0 : (bar_index - oEligBar)
+
+            bool _newHighAfterElig = na(oHighAfterElig) or (_high > oHighAfterElig)
+
+            if _newHighAfterElig
+                oHighAfterElig := _high
+                oNoNewHiStreak := 0
+            else
+                oNoNewHiStreak += 1
+
+            oLowAfterElig := na(oLowAfterElig) ? _low : math.min(oLowAfterElig, _low)
+
+            bool _nearHighNow = (_atr > 0 and not na(oHighAfterElig)) ? (_close >= (oHighAfterElig - _atr * pbPreInvNearHighATR)) : false
+            float _upperWickFrac = (_rng > 0) ? ((_high - math.max(open, _close)) / _rng) : 0.0
+
+            bool _stallBar =
+                 _nearHighNow and
+                 (not _newHighAfterElig) and
+                 (_bodyPct <= pbPreInvStallBodyPctMax)
+
+            bool _rejectBar =
+                 _nearHighNow and
+                 (_upperWickFrac >= pbPreInvUpperRejectFrac) and
+                 (_closeLoc <= pbPreInvCloseLocMax)
+
+            if _stallBar
+                oStallCount += 1
+            if _rejectBar
+                oRejectCount += 1
+
+            float _postEligLifeATR = (_atr > 0 and not na(oStartHigh) and not na(oHighAfterElig)) ? ((oHighAfterElig - oStartHigh) / _atr) : 0.0
+            bool _hasPostEligLife = (_postEligLifeATR >= pbPreInvMinLifeATR)
+
+            if (not oArmed) and (oBarsAfterElig >= pbPreInvArmMinBars) and _hasPostEligLife and (not _bullTP1Done)
+                oArmed := true
+
+    [oEligible, oArmed, oEligBar, oBarsAfterElig, oStartHigh, oHighAfterElig, oLowAfterElig, oNoNewHiStreak, oStallCount, oRejectCount]
+
+//====================================================
+// PROFILE_BREAKDOWN_DRIFT — ENA-like PRE_BULL_INV_HARVEST evaluator
+// PURE helper: returns bool only
+//====================================================
+f_pbPreInvDegradeNow(
+    bool _pbPreInvArmed,
+    bool _bullTP1Done,
+    int _pbPreInvNoNewHiStreak,
+    float _pbPreInvHighAfterElig,
+    int _pbPreInvRejectCount,
+    int _pbPreInvStallCount,
+    float _atr,
+    float _close,
+    float _emaFast,
+    bool _bullCloseInvalid
+) =>
+    float _pbPreInvGivebackNowATR =
+         (_atr > 0 and not na(_pbPreInvHighAfterElig))
+         ? ((_pbPreInvHighAfterElig - _close) / _atr)
+         : 0.0
+
+    bool _degradeNow =
+         _pbPreInvArmed and
+         (not _bullTP1Done) and
+         (_pbPreInvNoNewHiStreak >= pbPreInvNoNewHiBars) and
+         (_pbPreInvGivebackNowATR >= pbPreInvGivebackATR) and
+         (_close < _emaFast) and
+         (
+             (_pbPreInvRejectCount >= pbPreInvRejectNeed) or
+             (_pbPreInvStallCount >= pbPreInvStallNeed)
+         ) and
+         (not _bullCloseInvalid)
+
+    _degradeNow
+
+f_pbRunnerSignals(
+    bool _inPos,
+    bool _isLong,
+    string _posTag,
+    string _entryEngine,
+    bool _bullTP0Done,
+    bool _bullTP1Done,
+    int _bullTP0Bar,
+    float _bullTP0Hi,
+    float _bullTP0BarHigh,
+    float _bullTP0BarLow,
+    float _bullTP0BarATR,
+    float _bullTP0BarCloseLoc,
+    float _bullTP0BarDistEFATR,
+    bool _bullPBReclaimGateNow,
+    int _entryBar,
+    bool _delayedPending,
+    bool _delayedValidated,
+    int _delayedBar,
+    float _delayedHi,
+    float _tradeHi,
+    float _openprofit,
+    float _close,
+    float _avgPrice,
+    float _closeLoc,
+    bool _bullCloseInvalid,
+    int _pdNoNewHighStreak
+) =>
+    bool _managed =
+         (_entryEngine == "BULL_PB") or
+         (_entryEngine == "BULL_PB_IMP_DELAY_CONFIRM") or
+         (_entryEngine == "BULL_INIT_EARLY")
+
+    bool _proofDue =
+         _inPos and _isLong and (_posTag == "BULL") and
+         _managed and
+         _bullTP0Done and
+         (not _bullTP1Done) and
+         (not na(_bullTP0Bar)) and
+         (bar_index >= (_bullTP0Bar + 2))
+
+    bool _noNewHigh =
+         _proofDue and
+         (not na(_bullTP0Hi)) and
+         (_tradeHi <= _bullTP0Hi)
+
+    bool _negativeAtCheck =
+         _proofDue and
+         (_openprofit <= 0)
+
+    bool _weakTP0Plus1Due =
+         _inPos and _isLong and (_posTag == "BULL") and
+         _managed and
+         _bullTP0Done and
+         (not _bullTP1Done) and
+         (not na(_bullTP0Bar)) and
+         (bar_index == (_bullTP0Bar + 1))
+
+    bool _earlyWeakTP0Plus1Exit = (
+        _weakTP0Plus1Due and
+        not _delayedPending and
+        not _delayedValidated and
+        (
+            (
+                _openprofit <= 0 and
+                _closeLoc <= 0.45
+            ) or
+            (
+                _entryEngine == "BULL_INIT_EARLY" and
+                _openprofit > 0 and
+                not na(_bullTP0BarCloseLoc) and
+                not na(_bullTP0Hi) and
+                _bullTP0BarCloseLoc >= 0.80 and
+                _close <= _bullTP0Hi and
+                _closeLoc <= 0.20
+            )
+        )
+    )
+
+    bool _tp0Valid = not na(_bullTP0Hi) and not na(_bullTP0BarCloseLoc)
+
+    bool _impDelayTP0Plus1NoProgressExit = _weakTP0Plus1Due and _entryEngine=="BULL_PB_IMP_DELAY_CONFIRM" and not _delayedPending and not _delayedValidated and _tp0Valid and _bullTP0BarCloseLoc<=0.25 and _tradeHi<=_bullTP0Hi and _close<=_bullTP0Hi and _openprofit>0
+
+    bool _initEarlyTP0WeakHoldExit = _entryEngine=="BULL_INIT_EARLY" and bar_index<=_bullTP0Bar+3 and _openprofit>0 and _bullTP0BarCloseLoc>=0.80 and _close<=_bullTP0Hi and _closeLoc<=0.15
+
+    bool _immediateTP0Override = _bullTP0Bar==_entryBar and not na(_bullTP0BarHigh) and not na(_bullTP0BarLow) and not na(_bullTP0BarATR) and not na(_bullTP0BarCloseLoc) and _bullTP0BarATR>0 and (_bullTP0BarHigh-_bullTP0BarLow)/_bullTP0BarATR>=1.0886001789262738 and _bullTP0BarCloseLoc>=0.4693877551
+
+    bool _delayedNow = _proofDue and bar_index==_bullTP0Bar+2 and _tp0Valid and (_bullTP0Bar>_entryBar or _immediateTP0Override) and _tradeHi>_bullTP0Hi
+
+    bool _delayedFailExit = _delayedPending and not na(_delayedBar) and bar_index>=_delayedBar+2 and (na(_delayedHi) or _tradeHi<=_delayedHi)
+
+    // Immediate-TP0 runner close-progress failure.
+    // Targets cases where TP0 hits on entry bar, but by TP0+2
+    // the runner has no close-based continuation.
+    bool _immediateTP0CloseProgressFail =
+         _proofDue and
+         (_bullTP0Bar == _entryBar) and
+         (bar_index == (_bullTP0Bar + 2)) and
+         (not _delayedPending) and
+         (not _delayedValidated) and
+         (not na(_bullTP0BarATR)) and
+         (_bullTP0BarATR > 0) and
+         (not na(_avgPrice)) and
+         ((_close - _avgPrice) <= (_bullTP0BarATR * 0.20))
+
+    bool _strongTP0GrindHold = _proofDue and _managed and not _bullCloseInvalid and (((_bullTP0BarDistEFATR >= 2.60 or _bullPBReclaimGateNow) and _bullTP0BarCloseLoc >= 0.50 and _openprofit >= -1.25) or (_bullTP0BarDistEFATR >= 3.25 and _bullTP0BarCloseLoc >= 0.80 and _openprofit >= -1.75))
+
+    bool _noProofExit = not _bullCloseInvalid and (_impDelayTP0Plus1NoProgressExit or (_proofDue and not _strongTP0GrindHold and (_earlyWeakTP0Plus1Exit or _initEarlyTP0WeakHoldExit or _delayedFailExit or _immediateTP0CloseProgressFail or (not _delayedPending and not _delayedValidated and (_negativeAtCheck or (_noNewHigh and _pdNoNewHighStreak >= 2))))))
+
+    [_managed, _proofDue, _noNewHigh, _negativeAtCheck, _weakTP0Plus1Due, _earlyWeakTP0Plus1Exit, _immediateTP0Override, _delayedNow, (not na(_delayedHi) and _tradeHi>_delayedHi), _delayedFailExit, _noProofExit]
 
 //------------------------------
-// L1 trade lifecycle detection
+// L1 trade lifecycle detection 
 //------------------------------
-posOpened = barstate.isconfirmed and (strategy.position_size != 0) and (strategy.position_size[1] == 0)
-posClosed = barstate.isconfirmed and (strategy.position_size == 0) and (strategy.position_size[1] != 0)
+posOpened = barstate.isconfirmed and (posSize != 0) and (posSize[1] == 0)
+posClosed = barstate.isconfirmed and (posSize == 0) and (posSize[1] != 0)
 
 //------------------------------
 // L1: commit pending entry snapshot on actual fill (posOpened)
@@ -1301,8 +1850,8 @@ if exportToLogs and barstate.isconfirmed
                  L1_runId + "," + L1_tf + "," + L1_scriptVer + "," + str.tostring(tradeSeq) + "," +
                  str.tostring(tradeSeq) + "," +
                  str.replace_all(syminfo.ticker, ",", ";") + "," + dir + "," +
-                 str.replace_all(tvEntryId, ",", ";") + "," +
-                 str.replace_all(tvExitId, ",", ";") + "," +
+                 tvEntryId + "," +
+                 tvExitId + "," +
 
                  // Entry diagnostics (from your committed snapshot; same for TP1 + final exits)
                  str.replace_all(L1_entryEngine, ",", ";") + "," +
@@ -1364,10 +1913,14 @@ if exportToLogs and barstate.isconfirmed
                  str.tostring(L1_bsaEnt) + "," +
                  str.tostring(L1_bsrEnt) + "," +
 
-                 // Monetization/management flags (still meaningful)
+                 // Monetization/management flags
                  str.tostring(tp1HitRow) + "," + 
                  str.tostring(trailEverRow) + "," + 
                  str.tostring(L1_addCount) + "," +
+                 str.tostring(L1_tp0Hit) + "," +
+                 str.tostring(L1_tp0Bar) + "," +
+                 str.tostring(L1_tp1Hit) + "," +
+                 str.tostring(L1_tp1Bar) + "," +
                  str.tostring(L1_pbVetoMaskEnt) + "," +
                  str.tostring(L1_pbMajorImpulseEnt) + "," +
                  str.tostring(L1_pbImpulseAgeBarsEnt) + "," +
@@ -1401,7 +1954,7 @@ if exportToLogs and barstate.isconfirmed
         // Advance the emitted pointer
         L1_ctLogged := ctNow
         // Apply deferred PB snapshot reset only after L1 has logged the newly closed trade rows
-        if L1_pbResetPending and (strategy.position_size == 0)
+        if L1_pbResetPending and (posSize == 0)
             L1_pbVetoMaskEnt       := na
             L1_pbMajorImpulseEnt   := na
             L1_pbImpulseAgeBarsEnt := na
@@ -1417,44 +1970,7 @@ if exportToLogs and barstate.isconfirmed
             L1_pbHHProofOkEnt := na
             L1_pbResetPending := false
 
-//====================================================
-// Bull ADD diagnostics — counters (must be declared BEFORE bullAddEnter is computed)
-//====================================================
-var int   c_addSig   = 0     // bullAddEnter was true (signal)
-var int   c_addFill  = 0     // position size increased (actual fill)
-var int   c_tp1Hits  = 0     // TP1 executed
-var float prevPosSize = na
-
-// ADD gate diagnostics
-var int c_addPB      = 0
-var int c_addReclaim = 0
-var int c_addBlkTP1  = 0
-var int c_addBlkADX  = 0
-var int c_addBlkExt  = 0
-var int c_addBlkSpc  = 0
-var int c_addBlkSlope = 0
-var int c_addBlkNH    = 0
-var int c_addBlkHTF   = 0
-var int c_addBlkSlow  = 0
-var int c_addBlkTrail = 0
-var int c_bullStartSig = 0   // Bull START (impulse) signals
-var int c_bullCompSig = 0
-var int c_bullStartWin   = 0
-var int c_bullStartStrong= 0
-var int c_bullStartExt   = 0
-var int c_bullStartADX   = 0
-var int c_bullStartFinal = 0
-var int c_bullStartNoChase = 0
-var int c_bullStartMicroPB = 0
-var int c_bullTrailArmed = 0   // Bull runner trail armed (confirmed bars)
-var int c_bullTrailExit = 0
-
-var int c_bearPBSeen = 0
-var int c_bearBreakSig = 0
-var int c_bearReentryOk = 0
-
 bearAllowContinuation = bearActive and not pendingBear
-
 
 //====================================================
 // Balance detectors (Range-A + potential Range-B new balance)
@@ -1501,13 +2017,11 @@ if bearAcceptOk
     bullArmed      := false
     bullArmedBar   := na
     bullPBSeen     := false
-    bullPBBar      := na
+    bullNonRetryBlockedReclaimBar := na
     bullPBLow      := na
     bullStructLow  := na
     bullLevel      := na
     bullHH := na
-    bullArmRollHigh := na
-    bullHHBar := na
 
     // Also clear Bull label anchors so they cannot print inside Bear
     bullStartBar := na
@@ -1622,8 +2136,6 @@ if bearReclaimOk
     bearPBSeen := false
     bearPBBar  := na
 
-
-
 bearLockoutOk = (bearLockoutBars <= 0) or na(bearAcceptedBar) or ((bar_index - bearAcceptedBar) >= bearLockoutBars)
 // ---- Bear renewal + expiry (prevents months-long latch)
 // Renewal condition: fresh accept-down using CURRENT decision low (structure keeps proving bear control)
@@ -1635,8 +2147,6 @@ if bearRenewNow
         // Tighten snapshot levels to the latest break context (keeps reclaim relevant)
         bearBreakLvl := (decLow - atr * bearBuf_ATR)
         bearReclLvl  := (decLow + atr * bearBuf_ATR)
-
-
 
 // Expiry: if bear control stops renewing, downgrade to Range-B (value migration / re-anchor)
 bearExpired = bearActive and (bearMaxBars > 0) and (not na(bearRenewBar)) and ((bar_index - bearRenewBar) > bearMaxBars)
@@ -1662,13 +2172,8 @@ if bearExpired and (not inPos)
     forcedUntilBar := bar_index + downgradeBars
     bearForceCloseShort := false
 
-
-
-
 // Bear kill-switch exit (acceptance below break level while long)
 bearExitNow = inPos and (not na(bearBreakLvl)) and (close < bearBreakLvl) and (not bearNeed2Cl or close[1] < bearBreakLvl) and (not bearKillUseHTFveto or (not htfTrendOk))
-
-
 
 //====================================================
 // Bull engine (Trend v1.2) — accept-up -> retest-holds -> reclaim entry
@@ -1683,7 +2188,6 @@ if (not inPos) and (not pendingBull) and (not bullArmed) and crossUp and (not be
     bullLevel      := rollHigh
     // ---- Bull HH tracker (since START_BULL / accept-up) ----
 
-
 // --- PB-Count (per bull leg) ---
 var int bullPBCount = 0
 
@@ -1692,20 +2196,16 @@ var int bullPBCount = 0
 bullAcceptUp = pendingBull and not na(bullLevel) and (close > bullLevel) and (not bearActive) and (not pendingBear) and
      (not bullAcceptNeed2Cl or close[1] > bullLevel)
 
-
 if bullAcceptUp
     bullArmed       := true
     bullArmedBar    := bar_index
-    bullArmRollHigh := rollHigh
     bullHH := na
-    bullHHBar := na
+    bullNonRetryBlockedReclaimBar := na
     pendingBull     := false
     pendingBullBar  := na
     lastBullFlipType := "START_BULL"
     bullPBCount := 0
     rbFromPBBlock := false
-
-
 
     // ---- BULL label anchor (STRUCTURE) ----
     bullStartBar := bar_index
@@ -1716,7 +2216,6 @@ if bullAcceptUp
     bullEndBar   := na
     bullEndY     := na
     bullImpulseDone := false
-
 
 // --- START-BULL breakout entry (one-shot) ---
 bullStartBreak = ta.highest(high[1], bullBreakLookback_T)
@@ -1742,46 +2241,12 @@ bool bullStartNoChase =
 bool bullStartADXok = adxBullExecOk
 bool bullStartDmiOk = (not bullUseDMI) or (pdi > mdi)
 
-
 // Allow only shortly after accept-up (window), before pullback entry exists, one-shot
 bool bullStartInWindow =
      bullArmed and (not na(bullArmedBar)) and
      ((bar_index - bullArmedBar) >= 0) and ((bar_index - bullArmedBar) < bullStartWindowBars)
 
 bool bullStartEntry = bullStartEntryOn and bullStartInWindow and (not bullPBSeen) and (not bullImpulseDone) and bullStartStrong and bullStartNotExtended and bullStartNotExtendedEMA and bullStartNoChase and (not bullStartRequireMicroPB or bullStartMicroPB) and bullStartADXok and bullStartDmiOk
-
-if barstate.isconfirmed and (not inPos)
-    // gate 1: window + state
-    if bullStartEntryOn and bullStartInWindow and (not bullPBSeen) and (not bullImpulseDone)
-        c_bullStartWin += 1
-
-    // gate 2: impulse quality
-    if bullStartEntryOn and bullStartInWindow and (not bullPBSeen) and (not bullImpulseDone) and bullStartStrong
-        c_bullStartStrong += 1
-
-    // gate 3: not extended (both tests)
-    if bullStartEntryOn and bullStartInWindow and (not bullPBSeen) and (not bullImpulseDone) and bullStartStrong and bullStartNotExtended and bullStartNotExtendedEMA
-        c_bullStartExt += 1
-
-    // gate 4: exec ADX
-    if bullStartEntryOn and bullStartInWindow and (not bullPBSeen) and (not bullImpulseDone) and bullStartStrong and bullStartNotExtended and bullStartNotExtendedEMA and bullStartADXok
-        c_bullStartADX += 1
-
-    // gate 4.5: no-chase
-    if bullStartEntryOn and bullStartInWindow and (not bullPBSeen) and (not bullImpulseDone) and bullStartStrong and bullStartNotExtended and bullStartNotExtendedEMA and bullStartADXok and bullStartNoChase
-        c_bullStartNoChase += 1
-
-    // gate 4.6: micro pullback
-    if bullStartEntryOn and bullStartInWindow and (not bullPBSeen) and (not bullImpulseDone) and bullStartStrong and bullStartNotExtended and bullStartNotExtendedEMA and bullStartADXok and bullStartNoChase and bullStartMicroPB
-        c_bullStartMicroPB += 1
-
-    // gate 5: final condition (should match c_bullStartSig)
-    if bullStartEntry
-        c_bullStartFinal += 1
-
-
-if barstate.isconfirmed and (not inPos) and bullStartEntry
-    c_bullStartSig += 1
 
 bool bullAcceptCompression = false
 
@@ -1799,20 +2264,21 @@ if bullLostAcceptance
     bullLegHi := na
     bullLegNoNewHiStreak := 0
     bullPBCount := 0
+
+    bullCompArmed := false
+    bullCompArmBar := na
+    bullCompHi := na
+
     bullArmed    := false
     bullArmedBar := na
     bullPBSeen   := false
-    bullPBBar    := na
+    bullNonRetryBlockedReclaimBar := na
     bullPBLow    := na
     bullStructLow:= na
     bullLevel    := na
     pendingBull  := false
     pendingBullBar := na
     bullHH := na
-    bullArmRollHigh := na
-    bullHHBar := na
-
-
 
 // Retest-that-holds detection (only after arming)
 // STRICT: require price was ABOVE the retest zone on the prior bar (optional),
@@ -1822,7 +2288,6 @@ if bullArmed and (not inPos)
     if barstate.isconfirmed and (not na(bullArmedBar)) and (bar_index > bullArmedBar)
         if na(bullHH) or (high > bullHH)
             bullHH := high
-            bullHHBar := bar_index
 
     bool wasAboveZone = not na(bullLevel) and (high[1] > bullLevel + atr * bullPB_ATR)
     bool fromAboveOk  = (not bullPBRequireFromAbove) or wasAboveZone
@@ -1842,11 +2307,8 @@ if bullArmed and (not inPos)
 
     if (not bullPBSeen) and (bar_index > bullArmedBar + 1) and fromAboveOk and dippedIntoZone and pbCloseHolds and pbLowHolds
         bullPBSeen    := true
-        bullPBBar     := bar_index
         bullPBLow     := low
         bullStructLow := low
-
-
 
 // Expire stale pending bull (pre-accept) so it can't linger forever
 bullPendingExpired = pendingBull and (not inPos) and not na(pendingBullBar) and ((bar_index - pendingBullBar) > bullArmMaxBars)
@@ -1854,7 +2316,6 @@ if bullPendingExpired
     pendingBull    := false
     pendingBullBar := na
     bullLevel      := na
-
 
 // Expire stale bull setup
 bullSetupExpired = bullArmed and (not inPos) and not na(bullArmedBar) and ((bar_index - bullArmedBar) > bullArmMaxBars)
@@ -1865,19 +2326,20 @@ if bullSetupExpired
     lastBullFlipType := "END_BULL"
     bullLegHi := na
     bullLegNoNewHiStreak := 0
+
+    bullCompArmed := false
+    bullCompArmBar := na
+    bullCompHi := na
+
     pendingBull   := false
     bullArmed     := false
     bullArmedBar  := na
     bullPBSeen    := false
-    bullPBBar     := na
+    bullNonRetryBlockedReclaimBar := na
     bullPBLow     := na
     bullLevel     := na
     bullStructLow := na
     bullHH := na
-    bullArmRollHigh := na
-    bullHHBar := na
-
-
 
 // Reclaim entry (after PBSeen) with hold
 if bullPBSeen and (not inPos)
@@ -1886,11 +2348,37 @@ if bullPBSeen and (not inPos)
 bullHoldOk = bullPBSeen and (na(bullPBLow) ? true : (low >= bullPBLow - atr * bullHold_ATR))
 bullBreakLvl = ta.highest(high[1], bullBreakLookback_T)
 
+bool bullLaunchConfirmNow =
+     f_bullLaunchConfirmNow(
+         bullArmed,
+         bullPBSeen,
+         bullImpulseDone,
+         bullCompArmed,
+         bullArmedBar,
+         bullBreakLvl,
+         bullLevel,
+         bullLegNoNewHiStreak,
+         BULL_LAUNCH_CONFIRM_MIN_BARS,
+         BULL_LAUNCH_CONFIRM_MAX_BARS,
+         BULL_LAUNCH_MAX_NO_NEW_HI_STREAK
+     )
+
 bullReclaimNow =
      bullArmed and bullPBSeen and bullHoldOk and
      (close > bullLevel) and (close > open) and (bodyPct >= bullMinBodyPct_T) and
      (close > bullBreakLvl)
 
+bool bullDelayedNonRetryReclaimNow =
+     bullArmed and bullPBSeen and (not inPos) and
+     (not na(bullNonRetryBlockedReclaimBar)) and
+     (bar_index > bullNonRetryBlockedReclaimBar) and
+     ((bar_index - bullNonRetryBlockedReclaimBar) <= BULL_NONRETRY_RECLAIM_CARRY_BARS) and
+     bullHoldOk and
+     (close > bullLevel) and
+     (close > open)
+
+bool bullPBReclaimGateNow =
+     bullReclaimNow or bullDelayedNonRetryReclaimNow
 
 //===================================================
 // Bull Acceptance-Compression (no PB) — acceptance + tight compression + continuation-ready
@@ -1899,16 +2387,19 @@ bullReclaimNow =
 // Close-location filter reused for COMP quality
 bullCloseNearHighOk = closeLoc >= bullCompCloseNearHighMin
 
-// Hold + no-chase constraints
 bullCompHoldOk = bullArmed and not na(bullLevel) and (low >= bullLevel - atr * bullCompHold_ATR)
 bullCompNotChase = bullArmed and not na(bullLevel) and ((close - bullLevel) <= atr * bullCompMaxExt_ATR)
+bullCompRngAtr = (atr > 0) ? (rng / atr) : na
+bullCompRangeOk = not na(bullCompRngAtr) and (bullCompRngAtr <= bullCompMaxRngAtr)
+bullCompTightSubtypeOk = not na(bullCompRngAtr) and (bullCompRngAtr <= 0.65)
 
-// Acceptance-compression condition (PB did NOT happen; we are “accepted and compressing”)
 bullAcceptCompression :=
      bullCompOn and
      bullArmed and (not bullPBSeen) and (not bullImpulseDone) and
      (close > bullLevel) and (close[1] > bullLevel) and
      (bodyPct <= bullCompMaxBodyPct) and
+     bullCompRangeOk and
+     bullCompTightSubtypeOk and
      bullCloseNearHighOk and
      bullCompHoldOk and bullCompNotChase and
      ((not bullUseDMI) or (pdi > mdi)) and
@@ -1916,9 +2407,30 @@ bullAcceptCompression :=
      htfBullOk and
      (not bearActive) and (not pendingBear)
 
-if barstate.isconfirmed and (not inPos) and bullAcceptCompression
-    c_bullCompSig += 1
+if barstate.isconfirmed and (not inPos)
+    if bullAcceptCompression
 
+        if not bullCompArmed
+            bullCompArmed := true
+            bullCompArmBar := bar_index
+            bullCompHi := high
+
+bullCompStateInvalid =
+     bullCompArmed and (
+         not bullArmed or
+         bullPBSeen or
+         bullImpulseDone or
+         bearActive or
+         pendingBear or
+         na(bullLevel) or
+         (close <= bullLevel) or
+         (not na(bullCompArmBar) and (bar_index - bullCompArmBar > 1))
+     )
+
+if bullCompStateInvalid
+    bullCompArmed := false
+    bullCompArmBar := na
+    bullCompHi := na
 
 //====================================================
 // Bull invalidation + runner trail (TP1+runner)
@@ -1936,10 +2448,8 @@ bullInvLevelPost = bullLevel - atr * bullInvAfterTP1Buf_ATR
 bullPreInvalid = inPos and (posTag == "BULL") and not na(bullLevel) and (not bullTP1Done) and (close < bullInvLevelPre) and (not bullInvNeed2Cl or close[1] < bullInvLevelPre)
 
 // AFTER TP1: runner management (trail arms only after proof MFE)
-bullMFE_now = (inPos and posTag == "BULL") ? (tradeHi - strategy.position_avg_price) : 0.0
+bullMFE_now = (inPos and posTag == "BULL") ? (tradeHi - posAvg) : 0.0
 bullTrailArmed = bullTP1Done and bullTrailOn and (bullMFE_now >= atr * bullTrailArm_ATR)
-if exportToLogs and inPos and (posTag == "BULL") and bullTrailArmed
-    L1_trailEver := true
 
 bullPostTrailInvalid =
      inPos and (posTag == "BULL") and not na(bullLevel) and bullTrailArmed and
@@ -1956,26 +2466,71 @@ bearInvPre =
      inPos and (posTag == "BEAR") and (not bearTP1Done) and not na(bearReclLvl) and
      (close > bearReclLvl) and (not bearInvNeed2Cl or close[1] > bearReclLvl)
 
-bearProt0Level = (inPos and posTag == "BEAR") ? (strategy.position_avg_price + atr * bearProt0Buf_ATR) : na
+bearProt0Level = (inPos and posTag == "BEAR") ? (posAvg + atr * bearProt0Buf_ATR) : na
 bearInvPostTP0Protect =
      inPos and (posTag == "BEAR") and bearTP0Done and (not bearTP1Done) and not na(bearProt0Level) and
      (close > bearProt0Level) and (not bearProt0Need2Cl or close[1] > bearProt0Level)
 
 // Post-TP1 protection stop: prevent TP1 winners from turning into reclaim/bull-kill losers
-bearProtLevel = (inPos and posTag == "BEAR") ? (strategy.position_avg_price + atr * bearProtBuf_ATR) : na
+bearProtLevel = (inPos and posTag == "BEAR") ? (posAvg + atr * bearProtBuf_ATR) : na
 bearInvPostProtect =
      inPos and (posTag == "BEAR") and bearTP1Done and not na(bearProtLevel) and
      (close > bearProtLevel) and (not bearProtNeed2Cl or close[1] > bearProtLevel)
 
 // Post-TP1 trail: EMAfast + buffer (runner-style). After TP1 we stop using reclaim invalidation; BE+trail manage the runner.
 bearTrailEMA = emaFast
-bearTrailLevel = (inPos and posTag == "BEAR") ? (bearTrailEMA + atr * bearTrailBuf_ATR) : na
-bearInvPostTrail = inPos and (posTag == "BEAR") and bearTP1Done and bearTrailOn and not na(bearTrailLevel) and (close > bearTrailLevel) and (not bearProtNeed2Cl or close[1] > bearTrailLevel)
+
+float bearTrailDistEFATR  = (atr > 0) ? math.abs(close - emaFast) / atr : na
+float bearTrailDistDecATR = (atr > 0 and not na(decLow)) ? math.abs(close - decLow) / atr : na
+
+int bearTrailUp4 =
+     (close   > close[1] ? 1 : 0) +
+     (close[1] > close[2] ? 1 : 0) +
+     (close[2] > close[3] ? 1 : 0) +
+     (close[3] > close[4] ? 1 : 0)
+
+int bearTrailStrongReb4 =
+     ((closeLoc    >= bearTrailTightCloseLocMin and bodyPct    >= bearTrailTightBodyPctMin) ? 1 : 0) +
+     ((closeLoc[1] >= bearTrailTightCloseLocMin and bodyPct[1] >= bearTrailTightBodyPctMin) ? 1 : 0) +
+     ((closeLoc[2] >= bearTrailTightCloseLocMin and bodyPct[2] >= bearTrailTightBodyPctMin) ? 1 : 0) +
+     ((closeLoc[3] >= bearTrailTightCloseLocMin and bodyPct[3] >= bearTrailTightBodyPctMin) ? 1 : 0)
+
+bool bearTrailEMACompressLate =
+     not na(bearTrailDistEFATR) and
+     not na(bearTrailDistEFATR[3]) and
+     (bearTrailDistEFATR < bearTrailDistEFATR[3])
+
+bool bearTrailDecExpandLate =
+     not na(bearTrailDistDecATR) and
+     not na(bearTrailDistDecATR[3]) and
+     (bearTrailDistDecATR > bearTrailDistDecATR[3])
+
+bool bearTrailMatureRebound =
+     inPos and
+     (posTag == "BEAR") and
+     bearTP1Done and
+     bearTrailOn and
+     bearTrailTightenOn and
+     (closeLoc >= bearTrailTightCloseLocMin) and
+     (bodyPct >= bearTrailTightBodyPctMin) and
+     (bearTrailUp4 >= bearTrailTightMinUpBars4) and
+     (bearTrailStrongReb4 >= bearTrailTightStrongBars4) and
+     bearTrailEMACompressLate and
+     bearTrailDecExpandLate
+
+float bearTrailBufEff = bearTrailMatureRebound ? bearTrailTightBuf_ATR : bearTrailBuf_ATR
+bearTrailLevel = (inPos and posTag == "BEAR") ? (bearTrailEMA + atr * bearTrailBufEff) : na
+
+bearInvPostTrail =
+     inPos and
+     (posTag == "BEAR") and
+     bearTP1Done and
+     bearTrailOn and
+     not na(bearTrailLevel) and
+     (close > bearTrailLevel) and
+     (not bearProtNeed2Cl or close[1] > bearTrailLevel)
 
 // L1: BEAR trail armed/fired latch (auditable per full trade)
-if exportToLogs and inPos and (posTag == "BEAR") and bearTP1Done and bearTrailOn and not na(bearTrailLevel)
-    L1_trailEver := true
-
 bearShortInvalid = bearInvPre or bearInvPostTP0Protect or bearInvPostProtect or bearInvPostTrail
 
 // RB SHORT invalidation: reclaim above RB value boundary (close-based, optional 2-close)
@@ -2261,7 +2816,6 @@ else
     // Using WAIT here keeps engines off without pretending Bear is a trade mode.
         mode := Mode.Wait
 
-
 //====================================================
 // Raw regime observability (independent of selected mode)
 //====================================================
@@ -2284,7 +2838,6 @@ if enteredWait or enteredRangeA or enteredRangeB
     // no-op (intentionally)
     na
 
-
 //====================================================
 // Bear SHORT (Commit S1) — v1.3 only: accept-down -> retest -> breakdown
 //====================================================
@@ -2297,8 +2850,6 @@ if bearActive and bearShortOn and (not inPos) and not na(bearBreakLvl)
 
     if (not bearPBSeen) and poppedToZone and closeHolds
         bearPBSeen := true
-        if barstate.isconfirmed
-            c_bearPBSeen += 1
         bearPBBar  := bar_index
 
 // --- Fresh NO-PB window (must be defined BEFORE distance gate uses it) ---
@@ -2388,10 +2939,18 @@ bool bearBD_WeakCloseSlopeVeto =
      (closeLoc <= bearBD_WeakCloseSlopeBandMax) and
      (adxSlopeNow < bearBD_WeakCloseSlopeMin)
 
+bool bearBD_OffStretchWeakVeto =
+     bearBD_OffStretchWeakOn and
+     bearOffNow and
+     (_bdDistEF >= bearBD_OffStretchWeak_DistEFMin) and
+     (closeLoc >= bearBD_OffStretchWeak_CloseLocMin) and
+     (adxSlopeNow <= bearBD_OffStretchWeak_AdxSlopeMax)
+
 bearBD_OffVeto =
      bearBD_OffWeakCloseVeto or
      bearBD_OffHiAdxWeakCloseVeto or
      bearBD_WeakCloseSlopeVeto or
+     bearBD_OffStretchWeakVeto or
      bearOffSqVeto
 
 bearShortBreakdownNow =
@@ -2404,12 +2963,6 @@ bearShortBreakdownNow =
      (close < bearBreakLB) and
      bearDistGateOk and
      bearShortADXOk
-
-var int c_dbgBreakSig = 0
-if barstate.isconfirmed and bearShortBreakdownNow
-    c_dbgBreakSig += 1
-if barstate.isconfirmed and bearShortBreakdownNow
-    c_bearBreakSig += 1
 
 //====================================================
 // Range-B SHORT (Commit S2) — down re-anchor value-failure short
@@ -2449,7 +3002,6 @@ rbShortRejectionNow =
      (close < rbSBreakLB) and
      rbShortADXOk and rbCloseNearLowOk
 
-
 //====================================================
 // Entries (mutually exclusive while flat)
 //====================================================
@@ -2476,7 +3028,7 @@ bullAddReclaim =
      ( (close > bullAddBreak) or bullAddCloseTopOk )
 
 // Optional safety: only allow adds after TP1
-bullMFE_ATR = bullInPos ? ((tradeHi - strategy.position_avg_price) / atr) : 0.0
+bullMFE_ATR = bullInPos ? ((tradeHi - posAvg) / atr) : 0.0
 bullAddProofOk = (bullMFE_ATR >= bullAddProofMFE_ATR)
 bullAddTP1Ok = (not bullAddAfterTP1Only) or bullTP1Done or bullAddProofOk
 // Must make AND ACCEPT above the prior add reference (prevents chop-ladder adds)
@@ -2499,37 +3051,6 @@ bullAddEnter =
      htfBullOk and
      (not bearActive) and (not pendingBear) and
      (close > emaSlow)
-
-
-
-if barstate.isconfirmed and bullInPos and bullAddOn
-    if bullAddPB
-        c_addPB += 1
-
-    // Only evaluate "blocks" when we are actually attempting: RECLAIM happened
-    if bullAddReclaim
-        if not bullAddTP1Ok
-            c_addBlkTP1 += 1
-        if not adxBullAddOk
-            c_addBlkADX += 1
-        if adxBullAddSlopeRequired and (not adxAddRising)
-            c_addBlkSlope += 1
-        if not bullNotExtendedOk
-            c_addBlkExt += 1
-        if not bullAddSpacingOk
-            c_addBlkSpc += 1
-        if not bullAddNewHighOk
-            c_addBlkNH += 1
-        if not htfBullOk
-            c_addBlkHTF += 1
-        if not (close > emaSlow)
-            c_addBlkSlow += 1
-        if not bullAddTrailOk
-            c_addBlkTrail += 1
-
-    if bullAddReclaim
-        c_addReclaim += 1
-
 
 //====================================================
 // L2 trackers update (cheap)
@@ -2555,12 +3076,6 @@ l2_reclaimNow =
 
 if barstate.isconfirmed and l2_reclaimNow
     l2_lastReclaimBar := bar_index
-
-
-//====================================================
-// Scoring (simple, explicit, per-mode; logged at entry)
-//====================================================
-
 
 //====================================================
 // Entry score gate (optional, execution-layer filter)
@@ -2591,19 +3106,38 @@ scoreRB() =>
     s += (rbDir != 0) ? 1 : 0
     s
 
-scoreBear() =>
-    int s = 0
-    s += (not htfTrendOk) ? 1 : 0
-    s += pendingBear ? 1 : 0
-    s += bearActive ? 1 : 0
-    s
-
 scoreGateOk(_mode) =>
     minEntryScore <= 0 ? true :
      _mode == Mode.Bull   ? (scoreBull() >= minEntryScore) :
      _mode == Mode.RangeA ? (scoreRA()   >= minEntryScore) :
      true
 
+f_bd_pbImpDelayAll(_isBD, _confirmed, _inPos, _modeBull, _pbEnter, _pbExec, _mask, _impulseMask, _scoreOk, _touchOk, _hhOk, _scoreGateOk, _htfOk, _localOk, _armedPrev, _barPrev, _hiPrev, _loPrev, _maskPrev, _barNow, _highNow, _lowNow, _closeNow, _bodyPctNow, _closeLocNow, _minBodyPct, _minCloseLoc, _dmiOk, _adxOk, _noStart, _noImpulseDone) =>
+    bool _blockNow = _isBD and _confirmed and (not _inPos) and _modeBull and _pbEnter and (not _pbExec) and (_mask == _impulseMask) and _scoreOk and _touchOk and _hhOk and _scoreGateOk and _htfOk and _localOk
+    bool _due = _armedPrev and _confirmed and (not _inPos) and _modeBull and (_barNow == _barPrev + 1)
+    bool _enter = _due and _scoreGateOk and _htfOk and _localOk and _dmiOk and _adxOk and _noStart and _noImpulseDone and (not na(_hiPrev)) and (not na(_loPrev)) and (_closeNow > _hiPrev) and (_lowNow >= _loPrev) and (_bodyPctNow >= _minBodyPct) and (_closeLocNow >= _minCloseLoc)
+
+    bool  _armed = _armedPrev
+    int   _bar   = _barPrev
+    float _hi    = _hiPrev
+    float _lo    = _loPrev
+    int   _m     = _maskPrev
+
+    if _confirmed
+        if _enter or _inPos or (not _modeBull) or _due
+            _armed := false
+            _bar   := na
+            _hi    := na
+            _lo    := na
+            _m     := na
+        else if _blockNow
+            _armed := true
+            _bar   := _barNow
+            _hi    := _highNow
+            _lo    := _lowNow
+            _m     := _mask
+
+    [_enter, _armed, _bar, _hi, _lo, _m]
 
 //====================================================
 // LAYER 2 — Window logs (±N bars around events) to Pine Logs
@@ -2616,39 +3150,29 @@ scoreGateOk(_mode) =>
 l2_sanitize(string s) =>
     str.replace_all(s, ",", ";")
 
-// ===== CHUNK 1 END =====
-
-
-
-// ===== CHUNK 2 START =====
-
-// ---- Bitmask for blockedBy (cheap + explicit) ----
-const int BLK_HTF      = 1
-const int BLK_ADX      = 2
-const int BLK_SPACING  = 4
-const int BLK_EXT      = 8
-const int BLK_WINDOW   = 16
-const int BLK_SCORE    = 32
-const int BLK_BEAR     = 64
-const int BLK_OTHER    = 128
 // PB veto bits (PBDEC veto mask)
-const int PBV_TOUCH       = 1
-const int PBV_HHPROOF     = 2
-const int PBV_SCORE       = 4
-const int PBV_STALL       = 8
-const int PBV_EXHAUST     = 16
-const int PBV_LATE        = 32
-const int PBV_LIFECYCLE   = 64
-const int PBV_LATE_STALL  = 128
-const int PBV_AGE         = 256
-const int PBV_FRESH       = 512
-const int PBV_EXPAGE = 1024
-const int PBV_IMPULSE_CHASE = 2048
-const int PBV_LATE_FAIL = 4096
-const int PBV_RETRY_CHASE = 8192
-const int PBV_EARLY_ASSUME = 32768
-
-
+const int PBV_TOUCH            = 1
+const int PBV_HHPROOF          = 2
+const int PBV_SCORE            = 4
+const int PBV_STALL            = 8
+const int PBV_EXHAUST          = 16
+const int PBV_LATE             = 32
+const int PBV_LIFECYCLE        = 64
+const int PBV_LATE_STALL       = 128
+const int PBV_AGE              = 256
+const int PBV_FRESH            = 512
+const int PBV_EXPAGE           = 1024
+const int PBV_IMPULSE_CHASE    = 2048
+const int PBV_LATE_FAIL        = 4096
+const int PBV_RETRY_CHASE      = 8192
+const int PBV_EXP_DEEP         = 16384
+const int PBV_EARLY_ASSUME     = 32768
+const int PBV_REGIME           = 65536
+const int PBV_SUBTYPE          = 131072
+const int PBV_MATURITY_WINDOW  = 262144
+const int PBV_ACCEPT_HTFOFF    = 524288
+const int PBV_EARLY_HIGH_CLOSE = 1048576
+const int PBV_RECYCLED_DEEP_FATIGUE = 2097152
 
 // ---- Rolling buffers (keep last l2WindowBars bars of features) ----
 var array<int>   l2_bi   = array.new_int()
@@ -2711,10 +3235,10 @@ l2_cap = l2WindowBars
 // ---- Helper: compact position state ----
 posStateStr() =>
     // 0 flat, +L size, -S size (rounded)
-    if strategy.position_size == 0
+    if posSize == 0
         "FLAT"
     else
-        strategy.position_size > 0 ? ("L:" + str.tostring(math.round(strategy.position_size))) : ("S:" + str.tostring(math.round(math.abs(strategy.position_size))))
+        posSize > 0 ? ("L:" + str.tostring(math.round(posSize))) : ("S:" + str.tostring(math.round(math.abs(posSize))))
 
 // ---- Helper: vol flag (−1 contraction, 0 neutral, +1 expansion) ----
 l2_atrBase = ta.sma(atr, l2VolN)
@@ -3079,20 +3603,69 @@ if exportL2 and barstate.isconfirmed and L2_active
      
 // Hard mutual exclusivity: if START is valid, PB is forbidden; if PB is valid, START is forbidden.
 // Step 3: strict mutual exclusivity (START has priority over PB entry)
-bullImpulseEnter =
+bool bullLaunchConfirmEnter =
      barstate.isconfirmed and
-     (not inPos) and (mode == Mode.Bull) and
+     (not inPos) and
+     (mode == Mode.Bull) and
      scoreGateOk(Mode.Bull) and
-     bullStartEntry and
+     bullLaunchConfirmNow and
      (not bullPBSeen) and
      (not bullImpulseDone) and
      bullLocalTrendOk and
-     htfBullOk and bullStartADXok
+     htfBullOk and
+     bullStartADXok and
+     bullStartDmiOk and
+     bullStartNotExtended and
+     bullStartNotExtendedEMA
 
-bullCompEnter = barstate.isconfirmed and (not inPos) and (mode == Mode.Bull) and scoreGateOk(Mode.Bull) and
-     bullAcceptCompression and bullCompNotChase and
-     (not bullStartEntry) and (not bullImpulseDone) and
-     bullLocalTrendOk and htfBullOk and adxBullExecOk and (not bullUseDMI or (pdi > mdi))
+bullImpulseEnter =
+     bullLaunchConfirmEnter or
+     (
+         barstate.isconfirmed and
+         (not inPos) and (mode == Mode.Bull) and
+         scoreGateOk(Mode.Bull) and
+         bullStartEntry and
+         (not bullPBSeen) and
+         (not bullImpulseDone) and
+         bullLocalTrendOk and
+         htfBullOk and bullStartADXok
+     )
+
+bullCompResolveNow =
+     barstate.isconfirmed and
+     (not inPos) and
+     (mode == Mode.Bull) and
+     scoreGateOk(Mode.Bull) and
+     bullAcceptCompression and
+     bullLocalTrendOk and
+     htfBullOk and
+     adxBullExecOk and
+     (not bullUseDMI or (pdi > mdi)) and
+     bullCompHoldOk and
+     bullCompNotChase and
+     (not bullStartEntry) and
+     (not bullImpulseDone) and
+     (close > high[1])
+
+bullCompResolveUp =
+     bullCompArmed and
+     barstate.isconfirmed and
+     (not inPos) and
+     (mode == Mode.Bull) and
+     scoreGateOk(Mode.Bull) and
+     bullLocalTrendOk and
+     htfBullOk and
+     adxBullExecOk and
+     (not bullUseDMI or (pdi > mdi)) and
+     bullCompHoldOk and
+     bullCompNotChase and
+     (not na(bullCompHi)) and
+     (close > bullCompHi) and
+     (not bullStartEntry) and
+     (not bullImpulseDone)
+
+bullCompEnter =
+     bullCompResolveNow or bullCompResolveUp
 
 // --- PB Expansion-Age veto (NEW) ---
 // ExpansionAge = bars since last bull-leg structural expansion (new high)
@@ -3102,7 +3675,7 @@ int bullPBExpAgeBars = na(bullLastExpansionBar) ? 999999 : (bar_index - bullLast
 // VETO if ExpAge >= N AND bodyPct <= X
 bool bullPBLateExpAgeBodyVeto = bullPBUseLateExpAgeBodyVeto and (bullPBExpAgeBars >= bullPBLateExpAgeBars_VetoN) and (bodyPct <= bullPBLateBodyPct_VetoMax)
 
-bullPBEnter = barstate.isconfirmed and (not inPos) and (mode == Mode.Bull) and scoreGateOk(Mode.Bull) and bullPBSeen and bullReclaimNow and (not bullStartEntry) and (not bullImpulseDone) and bullLocalTrendOk and htfBullOk and (not bullUseDMI or (pdi > mdi)) and adxBullPBExecOk and (not bullPBLateExpAgeBodyVeto)
+bullPBEnter = barstate.isconfirmed and (not inPos) and (mode == Mode.Bull) and scoreGateOk(Mode.Bull) and bullPBSeen and bullPBReclaimGateNow and (not bullStartEntry) and (not bullImpulseDone) and bullLocalTrendOk and htfBullOk and (not bullUseDMI or (pdi > mdi)) and adxBullPBExecOk and (not bullPBLateExpAgeBodyVeto)
 
 // --- PB-Count cap: compute prospective PB number for this bar ---
 int bullPBCountNext = bullPBCount + (bullPBEnter ? 1 : 0)
@@ -3123,25 +3696,7 @@ entryMode = Mode.Wait
 // --- BEAR SHORT entry (v1.3 only) ---
 bearReentryOk = na(lastBearShortExitBar) or (bar_index - lastBearShortExitBar >= 24)
 
-if barstate.isconfirmed and bearReentryOk
-    c_bearReentryOk += 1
-
-// --- Breakdown "late override": if your internal breakdown logic blocks late entries,
-// allow them ONLY when the candle is initiative (big body + closes near low).
 bool bearBD_LateImpulseOk = (bodyPct >= bearBD_LateBodyPctMin) and (closeLoc >= bearBD_LateCloseLocMin)
-
-// If PB timestamp exists, you can treat "late" as "PB latch exists and is older than X bars".
-// We won't hard-code X here (since your stale logic is currently inside bearShortBreakdownNow),
-// we just use this as an additional permissive gate when breakdown is otherwise valid.
-// Late override must still be a REAL breakdown-context (not "impulse short anywhere")
-bool bearBD_OverrideOk =
-     bearBD_LateAllow and bearBD_LateImpulseOk and
-     bearActive and bearShortOn and bearPBSeen and
-     (adx >= bearAdxMin) and
-     (not na(bearBreakLvl)) and (close < bearBreakLvl) and
-     (not na(bearBreakLB))  and (close < bearBreakLB) and
-     bearShortADXOk and 
-     bearDistOk
 
 // ---- Split BEAR entry paths (avoid ACCEPT overriding BREAKDOWN) ----
 bool bearEnterBreak = (
@@ -3309,8 +3864,6 @@ bool bullPBAgeVeto = bullPBAgeBars > bullPBMaxAgeBars
 // --- PB Freshness: MAJOR impulse age (NEW axis) ---
 int pbImpLookback = 12
 
-int bullMajorImpulseAgePrev = na(bullLastMajorImpulseBar) ? 999999 : (bar_index - bullLastMajorImpulseBar)
-
 float pbMajorBreakLvl = ta.highest(high[1], pbImpLookback)
 
 bool pbMajorImpulse =
@@ -3369,6 +3922,38 @@ bool bullPBFreshVeto = bullPBUseFreshness and bullPBFreshnessLateOk and (bullPBI
 // We only apply this veto when PB is already "late-eligible" (same philosophy as Freshness)
 bool bullPBExpAgeVeto = bullPBUseExpAge and bullPBFreshnessLateOk and (bullPBExpAgeBars > bullPBMaxExpAgeBars)
 
+// Direct stale-expansion veto:
+// unlike bullPBExpAgeVeto, this one does NOT wait for "late-eligible" routing.
+// It directly blocks the load-bearing negative slice seen in the workbook:
+// pbExpAgeBarsEnt >= 10 and pbAgeBarsEnt >= 4.
+bool bullPBDirectExpAgeVeto =
+     bullPBUseDirectExpAgeVeto and
+     (bullPBExpAgeBars >= bullPBDirectExpAgeBars) and
+     (bullPBAgeBars >= bullPBDirectAgeBars)
+
+float bullPBDepthATR = (atr > 0) ? (bullPBDepth / atr) : na
+
+bool bullPBExpDepthVeto =
+     bullPBUseExpDepthVeto and
+     (bullPBExpAgeBars >= bullPBExpDepthExpBars) and
+     (not na(bullPBDepthATR)) and
+     (bullPBDepthATR >= bullPBExpDepthMinATR)
+
+// --- PB Maturity-Window veto (Phase 3) ---
+// Blocks the weak expansion-age slice identified in the v7.85 audit.
+bool bullPBWeakExpWindowVeto =
+     bullPBUseWeakExpWindowVeto and
+     (bullPBExpAgeBars >= bullPBWeakExpWindowMinBars) and
+     (bullPBExpAgeBars <= bullPBWeakExpWindowMaxBars)
+
+// --- PB Accept-window + HTF_OFF veto (Phase 3C) ---
+// Blocks the weak acceptance slice only when higher timeframe support is OFF.
+bool bullPBAcceptHtfOffVeto =
+     bullPBUseAcceptHtfOffVeto and
+     (bullAcceptUpCnt >= bullPBAcceptHtfOffMinCnt) and
+     (bullAcceptUpCnt <= bullPBAcceptHtfOffMaxCnt) and
+     (not htfOnNow)
+
 // --- PB Impulse-Chase veto (NEW) ---
 // Blocks PB entries that fire on the same bar as a new major impulse while ADX slope is rising.
 bool bullPBImpulseChaseVeto = pbMajorImpulse and (bullPBImpulseAgeBars == 0) and (adxSlopeNow > 0)
@@ -3426,6 +4011,91 @@ bool pbVeto_LongStallNoHH =
 bool bullPBEarlyAssumeVeto =
      pbVeto_EarlyStall_A or pbVeto_EarlyStall_B or pbVeto_MajorImpulseWeak or pbVeto_VeryEarlyNoAbsorb or pbVeto_LongStallNoHH
 
+// ================================
+// PB Regime Permission gate (Phase 1, log-derived)
+// Mechanical findings on unique PB entries:
+// - ADX > 40 is the first clean positive separator
+// - pbImpulseAge 0-2 is the positive fresh-continuation pocket
+// - distBullATR > 2.4 is positive
+// - pbDepthATR >= 1.8 is constructive only when trend context is not weak
+// ================================
+float bullPBDistBullATR =
+     (atr > 0 and not na(bullLevel)) ? ((close - bullLevel) / atr) : na
+
+bool bullPBRegimeStrongAdx =
+     adx >= bullPBGateStrongAdxMin
+
+bool bullPBRegimeFreshImp =
+     bullPBImpulseAgeBars <= bullPBGateFreshImpMaxBars
+
+bool bullPBRegimeDecisiveExt =
+     (not na(bullPBDistBullATR)) and
+     (bullPBDistBullATR >= bullPBGateDistBullMinATR)
+
+bool bullPBRegimeDeepReset =
+     (not na(bullPBDepthATR)) and
+     (bullPBDepthATR >= bullPBGateDeepResetMinATR) and
+     (adx >= bullPBGateDeepResetAdxMin)
+
+// Delta-based carve-out inside PBV_REGIME:
+// restore only deep resets that also show either older expansion
+// or at least some no-new-high buildup.
+bool bullPBRegimeRestoreDeepOlder =
+     (not na(bullPBDepthATR)) and
+     (bullPBDepthATR >= bullPBGateRestoreDeepResetATR) and
+     (
+         (bullPBExpAgeBars >= bullPBGateRestoreExpAgeMin) or
+         (bullLegNoNewHiStreak >= 2)
+     )
+
+bool bullPBRegimeAllowed =
+     bullPBRegimeStrongAdx or
+     bullPBRegimeFreshImp or
+     bullPBRegimeDecisiveExt or
+     bullPBRegimeDeepReset or
+     bullPBRegimeRestoreDeepOlder
+
+bool bullPBRegimeVeto =
+     bullPBUseRegimeGate and
+     (not bullPBRegimeAllowed)
+
+// ================================
+// PB Same-Bar Subtype veto (Phase 3A)
+// Targets the weak PB slice found in v7.76 logs:
+// early after acceptance + HTF not strictly ON +
+// (very fresh expansion OR impulse age 3..6)
+// ================================
+int bullPBBarsSinceAccept = l2_barsSince(l2_lastAcceptBar)
+
+bool bullPBSubtypeEarlyAccept =
+     not na(bullPBBarsSinceAccept) and
+     (bullPBBarsSinceAccept <= 3)
+
+bool bullPBSubtypeWeakImpMid =
+     (bullPBImpulseAgeBars >= 3) and
+     (bullPBImpulseAgeBars <= 6)
+
+bool bullPBSubtypeVeto =
+     bullPBSubtypeEarlyAccept and
+     bullPBSubtypeWeakImpMid
+
+bool bullPBEarlyHighCloseVeto =
+     bullPBUseEarlyHighCloseVeto and
+     (bullPBAgeBars <= bullPBEarlyHighCloseMaxAge) and
+     (closeLoc >= bullPBEarlyHighCloseLocMin)
+
+// Structural PB mismatch veto:
+// Blocks old-impulse / fresh-expansion entries only when the reset is shallow.
+// File audit: preserves W/KAS/FARTCOIN deeper-reset winners while still blocking JASMY/ONDO/WLD.
+bool bullPBOldImpulseFreshExpVeto =
+     (bullPBImpulseAgeBars >= 9) and
+     (bullPBExpAgeBars <= 1) and
+     (not na(bullPBDepthATR)) and
+     (bullPBDepthATR <= 1.25)
+
+bool bullPBRecycledDeepFatigueVeto =
+     (bullPBImpulseAgeBars >= 8) and
+     (bullPBAgeBars>=7 and bullLegNoNewHiStreak>=2 and bullPBDepthATR>=2.10 and bodyPct>=.49 or bullPBAgeBars>=8 and bullPBExpAgeBars<=3 and bodyPct<=.40 and closeLoc<=.45 and not bullStartEntry and not bullImpulseDone)
 
 // --- PB Failed-Continuation veto (NEW) ---
 // Blocks late PB attempts that stall (many small bodies) and fail to progress highs.
@@ -3435,13 +4105,29 @@ bool bullPBLateFailVeto =
      pbHighFail and
      (pbStallCount >= bullPBLateFailMinStallCount)
 
+bool bullPBShallowOldImpulseVeto =
+     (bullPBImpulseAgeBars >= 8) and
+     (bullPBDepthATR < 1.55) and
+     (bullPBAgeBars >= 8)
+
 bool bullPBStallCluster = (pbStallCount >= bullPBStallMinCount) and pbHighFail
 
 // Hard veto (PB only)
 bool bullPBStallVeto = bullPBStallCluster
 
-// Score point: +1 if stall cluster is NOT present
-int bullPBScore = bullPBStallCluster ? 0 : 1
+// v7.82 test from v7.80 baseline:
+// PB maturity modulation only.
+// Penalize PB entries when impulse age is in the weak 4..6 window.
+// Do NOT add a veto. Do NOT change router or exits.
+bool bullPBMaturityPenalty_4to6 =
+     (bullPBImpulseAgeBars >= 4) and
+     (bullPBImpulseAgeBars <= 6)
+
+// Base score point: +1 if stall cluster is NOT present
+int bullPBBaseScore = bullPBStallCluster ? 0 : 1
+
+// Final PB score after maturity penalty
+int bullPBScore = bullPBBaseScore - (bullPBMaturityPenalty_4to6 ? 1 : 0)
 
 // Final PB execution gate
 // Option A: structural HH proof (must exceed reclaimed range high = bullLevel)
@@ -3453,8 +4139,133 @@ bool bullPB_HHProofOk =
 
 
 // Final PB execution gate
-bool bullPBEnterExec = bullPBEnter and bullPBTouchOk and bullPB_HHProofOk and (bullPBScore >= bullPB_MinScore) and (not bullPBStallVeto) and (not bullPBExhaustVeto) and (not bullPBLateVeto) and (not bullPBLifecycleVeto) and (not bullPBLateStallVeto) and (not bullPBAgeVeto) and (not bullPBFreshVeto) and (not bullPBExpAgeVeto) and (not bullPBImpulseChaseVeto) and (not bullPBLateFailVeto) and (not bullPBRetryAfterChaseVeto) and (not bullPBEarlyAssumeVeto)
+bool bullPBEnterExec = bullPBEnter and bullPBTouchOk and bullPB_HHProofOk and (bullPBScore >= bullPB_MinScore) and (not bullPBStallVeto) and (not bullPBExhaustVeto) and (not bullPBLateVeto) and (not bullPBLifecycleVeto) and (not bullPBLateStallVeto) and (not bullPBAgeVeto) and (not bullPBFreshVeto) and (not bullPBExpAgeVeto) and (not bullPBDirectExpAgeVeto) and (not bullPBExpDepthVeto) and (not bullPBWeakExpWindowVeto) and (not bullPBAcceptHtfOffVeto) and (not bullPBImpulseChaseVeto) and (not bullPBLateFailVeto) and (not bullPBRetryAfterChaseVeto) and (not bullPBEarlyAssumeVeto) and (not bullPBRegimeVeto) and (not bullPBSubtypeVeto) and (not bullPBEarlyHighCloseVeto) and (not bullPBOldImpulseFreshExpVeto) and (not bullPBRecycledDeepFatigueVeto) and (not bullPBShallowOldImpulseVeto)
 
+// --- BULL_INIT_EARLY (PROFILE_BREAKDOWN_DRIFT only) ---
+// Offensive participation path for Breakdown Drift.
+// Designed to catch constructive bull continuation before late PB execution.
+
+bool bullInitEarlyWindow =
+     (bullPBAgeBars >= bdBullInitEarlyMinPBAge) and
+     (bullPBAgeBars <= bdBullInitEarlyMaxPBAge) and
+     (bullPBImpulseAgeBars >= bdBullInitEarlyMinImpAge) and
+     (bullPBImpulseAgeBars <= bdBullInitEarlyMaxImpAge)
+
+bool bullInitEarlyStructuralOk =
+     bullArmed and
+     bullPBSeen and
+     bullHoldOk and
+     bullPBTouchOk and
+     (not bullImpulseDone) and
+     (bullLegNoNewHiStreak <= bdBullInitEarlyMaxNoNewHi) and
+     (not bullCloseInvalid)
+
+bool bullInitEarlyExpansionOk =
+     bullPBReclaimGateNow and
+     (
+         close > high[1] or
+         close > high[2]
+     )
+
+bool bullInitEarlyScoreMatureBad = bullPBAgeBars==bdBullInitEarlyMaxPBAge and bullPBImpulseAgeBars==bdBullInitEarlyMaxImpAge and bullPBExpAgeBars<=4
+
+bool bullInitEarlyCleanScoreOnlyRescue =
+     not bullInitEarlyScoreMatureBad and
+     bullArmed and
+     bullPBSeen and
+     bullHoldOk and
+     bullPBTouchOk and
+     (not bullImpulseDone) and
+     (not bullCloseInvalid) and
+     bullPBReclaimGateNow and
+     (bullPBScore < bullPB_MinScore) and
+     (not bullPBEarlyAssumeVeto) and
+     (not bullPBRegimeVeto) and
+     bullPBEnter and
+     (not bullPBEnterExec) and
+     (bullPBAgeBars == bdBullInitEarlyMaxPBAge) and
+     (bullPBImpulseAgeBars == bdBullInitEarlyMaxImpAge) and
+     (bullLegNoNewHiStreak > bdBullInitEarlyMaxNoNewHi)
+
+bool bullInitEarlyExactBaseRescue =
+     bullPBEnter and not bullPBEnterExec and
+     bullPB_HHProofOk and
+     bullPBAgeBars == 4 and
+     bullPBImpulseAgeBars == 5 and
+     bullLegNoNewHiStreak == 0 and
+     bullPBDepthATR >= 1.00 and bullPBDepthATR <= 1.70 and
+     bodyPct >= 0.45 and bodyPct <= 0.80 and
+     bullPBScore < bullPB_MinScore and
+     bullPBEarlyAssumeVeto and bullPBRegimeVeto and bullPBEarlyHighCloseVeto
+
+bool bullInitEarlyBypassOnlyScoreOrEarlyAssume =
+     not bullInitEarlyScoreMatureBad and
+     bullPBSeen and
+     bullPBReclaimGateNow and
+     bullPBTouchOk and
+     (not bullImpulseDone) and
+     (bullPBScore < bullPB_MinScore) and
+     (not bullPBEarlyAssumeVeto) and
+     bullInitEarlyExpansionOk and
+     (not bullPBStallVeto) and
+     (not bullPBExhaustVeto) and
+     (not bullPBLateVeto) and
+     (not bullPBLifecycleVeto) and
+     (not bullPBLateStallVeto) and
+     (not bullPBAgeVeto) and
+     (not bullPBFreshVeto) and
+     (not bullPBExpAgeVeto) and
+     (not bullPBDirectExpAgeVeto) and
+     (not bullPBExpDepthVeto) and
+     (not bullPBWeakExpWindowVeto) and
+     (not bullPBAcceptHtfOffVeto) and
+     (not bullPBImpulseChaseVeto) and
+     (not bullPBLateFailVeto) and
+     (not bullPBRetryAfterChaseVeto) and
+     (not bullPBRegimeVeto) and
+     (not bullPBSubtypeVeto)
+
+bool bieBase = barstate.isconfirmed and not inPos and mode==Mode.Bull and scoreGateOk(Mode.Bull) and bullArmed and bullPBSeen and bullHoldOk and bullPBTouchOk and bullPB_HHProofOk and not bullImpulseDone and not bullCloseInvalid and bullLocalTrendOk and htfBullOk and (not bullUseDMI or pdi>mdi) and not bullStartEntry and close>bullLevel and close>open
+
+bool bullInitEarlyPressureBuildPreBreak = bieBase and not adxBullPBExecOk and not na(bullBreakLvl) and atr>0 and bodyPct>=0.35 and ((close<=bullBreakLvl and bullBreakLvl-close<=atr*0.70 and bullPBAgeBars==7 and bullPBImpulseAgeBars==8 and bullLegNoNewHiStreak>=4) or (close>bullBreakLvl and bullPBRegimeVeto and bullPBAgeBars==5 and bullPBImpulseAgeBars>=60 and bullLegNoNewHiStreak>=3 and bullPBDepthATR>=2.0 and bodyPct>=0.50 and closeLoc>=0.70))
+
+bool bullInitEarlyEnter =
+     bdBullInitEarlyOn and
+     (
+         bullInitEarlyPressureBuildPreBreak or
+         (
+             bieBase and
+             adxBullPBExecOk and
+             bullPBReclaimGateNow and
+             not bullStartEntry and
+             (
+                 (
+                     bullInitEarlyWindow and
+                     (bullInitEarlyStructuralOk or bullInitEarlyCleanScoreOnlyRescue) and
+                     (bullInitEarlyBypassOnlyScoreOrEarlyAssume or bullInitEarlyCleanScoreOnlyRescue)
+                 ) or
+                 (
+                     bullInitEarlyStructuralOk and
+                     bullInitEarlyExactBaseRescue
+                 )
+             )
+         )
+     )
+
+bool bullPBBlockedNonRetryReclaimNow =
+     barstate.isconfirmed and
+     bullPBEnter and
+     (not bullPBEnterExec) and
+     bullReclaimNow and
+     (not bullPBImpulseChaseVeto) and
+     (not bullPBRetryAfterChaseVeto)
+
+if bullPBBlockedNonRetryReclaimNow
+    bullNonRetryBlockedReclaimBar := bar_index
+else if barstate.isconfirmed and bullPBEnterExec
+    bullNonRetryBlockedReclaimBar := na
+else if barstate.isconfirmed and (not na(bullNonRetryBlockedReclaimBar)) and ((bar_index - bullNonRetryBlockedReclaimBar) > BULL_NONRETRY_RECLAIM_CARRY_BARS)
+    bullNonRetryBlockedReclaimBar := na
 
 // ---- PBDEC veto mask (PB-specific) ----
 int pbVetoMask = 0
@@ -3469,11 +4280,39 @@ pbVetoMask += (bullPBLateStallVeto ? PBV_LATE_STALL : 0)
 pbVetoMask += (bullPBAgeVeto ? PBV_AGE : 0)
 pbVetoMask += (bullPBFreshVeto ? PBV_FRESH : 0)
 pbVetoMask += (bullPBExpAgeVeto ? PBV_EXPAGE : 0)
+pbVetoMask += (bullPBExpDepthVeto ? PBV_EXP_DEEP : 0)
+pbVetoMask += (bullPBWeakExpWindowVeto ? PBV_MATURITY_WINDOW : 0)
+pbVetoMask += (bullPBAcceptHtfOffVeto ? PBV_ACCEPT_HTFOFF : 0)
 pbVetoMask += (bullPBImpulseChaseVeto ? PBV_IMPULSE_CHASE : 0)
 pbVetoMask += (bullPBRetryAfterChaseVeto ? PBV_RETRY_CHASE : 0)
 pbVetoMask += (bullPBLateFailVeto ? PBV_LATE_FAIL : 0)
 pbVetoMask += (bullPBEarlyAssumeVeto ? PBV_EARLY_ASSUME : 0)
+pbVetoMask += (bullPBRegimeVeto ? PBV_REGIME : 0)
+pbVetoMask += (bullPBSubtypeVeto ? PBV_SUBTYPE : 0)
+pbVetoMask += (bullPBEarlyHighCloseVeto ? PBV_EARLY_HIGH_CLOSE : 0)
+pbVetoMask += (bullPBRecycledDeepFatigueVeto ? PBV_RECYCLED_DEEP_FATIGUE : 0)
 
+// BD-only: for impulse-delay arming, treat EARLY_HIGH_CLOSE as secondary noise
+// only when IMPULSE_CHASE is also present. This preserves the JTO delayed-confirm path
+// without globally bypassing EARLY_HIGH_CLOSE for direct PB execution.
+int pbVetoMaskForImpDelay = pbVetoMask
+if  bullPBImpulseChaseVeto and bullPBEarlyHighCloseVeto
+    pbVetoMaskForImpDelay -= PBV_EARLY_HIGH_CLOSE
+
+bool bdImpDelayDepthOk =
+     not na(bullPBDepthATR) and
+     (bullPBDepthATR <= bdImpDelayMaxDepthATR) and
+     bullPBExpAgeBars < 60
+
+// PROFILE_BREAKDOWN_DRIFT — PB impulse-chase delayed confirmation
+[bullPBImpulseDelayedConfirmEnter, bd_nextArmed, bd_nextBar, bd_nextHigh, bd_nextLow, bd_nextMask] = f_bd_pbImpDelayAll(true, barstate.isconfirmed, inPos, mode == Mode.Bull, bullPBEnter, bullPBEnterExec, pbVetoMaskForImpDelay, PBV_IMPULSE_CHASE, bullPBScore >= bullPB_MinScore, bullPBTouchOk, bullPB_HHProofOk, scoreGateOk(Mode.Bull), htfBullOk, bullLocalTrendOk and bdImpDelayDepthOk, bullPBImpDelayArmed, bullPBImpDelayBar, bullPBImpDelayHigh, bullPBImpDelayLow, bullPBImpDelayMask, bar_index, high, low, close, bodyPct, closeLoc, bdImpDelayMinBodyPct, bdImpDelayMinCloseLoc, not bullUseDMI or (pdi > mdi), adxBullPBExecOk, not bullStartEntry, not bullImpulseDone)
+
+if barstate.isconfirmed
+    bullPBImpDelayArmed := bd_nextArmed
+    bullPBImpDelayBar   := bd_nextBar
+    bullPBImpDelayHigh  := bd_nextHigh
+    bullPBImpDelayLow   := bd_nextLow
+    bullPBImpDelayMask  := bd_nextMask
 
 // ---- L2 window log: PB DECISION (exec OR blocked) ----
 if exportL2 and barstate.isconfirmed and bullPBEnter
@@ -3525,12 +4364,9 @@ if exportL2 and barstate.isconfirmed and bullPBEnter
 // ==============================
 // PBDBG: log PB candidates (EXEC + optional BLOCK) to Pine Logs
 // ==============================
-if exportToLogs and dbgPBProbe and barstate.isconfirmed and bullPBEnter and (dbgPBProbeIncludeBlocked or bullPBEnterExec)
-    string pbStatus = bullPBEnterExec ? "EXEC" : "BLOCK"
-
-    float distBullATR = (atr > 0 and not na(bullLevel)) ? ((close - bullLevel) / atr) : na
-    float distEFAtr   = (atr > 0) ? ((close - emaFast) / atr) : na
-    float pbDepthATR  = (atr > 0) ? (bullPBDepth / atr) : na
+if exportToLogs and dbgPBProbe and barstate.isconfirmed and (not inPos) and bullArmed and (mode == Mode.Bull)
+    
+    string pbStatus = bullInitEarlyEnter ? "INIT_EARLY_EXEC" : bullPBEnterExec ? "EXEC" : bullPBEnter ? "ENTER_NOEXEC" : bullReclaimNow ? "RECLAIM_ONLY" : bullPBSeen ? "SEEN_ONLY" : "ARMED_ONLY"
 
     log.info(
     "PBDBG," +
@@ -3538,72 +4374,101 @@ if exportToLogs and dbgPBProbe and barstate.isconfirmed and bullPBEnter and (dbg
     str.tostring(bar_index) + "," +
     fmtDT(time) + "," +
     str.tostring(time) + "," +
+    pbStatus + "," +
+    str.tostring(close) + "," +
+    str.tostring(open) + "," +
+    str.tostring(high) + "," +
+    str.tostring(low) + "," +
+    str.tostring(bodyPct) + "," +
+    str.tostring(atr) + "," +
+    str.tostring(bullLevel) + "," +
+    str.tostring(bullBreakLvl) + "," +
+    b01(not na(bullLevel) and close > bullLevel) + "," +
+    b01(not na(bullBreakLvl) and close > bullBreakLvl) + "," +
+    b01(scoreGateOk(Mode.Bull)) + "," +
+    b01(adxBullPBExecOk) + "," +
+    b01(htfBullOk) + "," +
+    b01(bullLocalTrendOk) + "," +
+    b01(bullPBSeen) + "," +
+    b01(bullHoldOk) + "," +
+    b01(bullReclaimNow) + "," +
+    b01(bullPBTouchOk) + "," +
+    b01(bullPB_HHProofOk) + "," +
+    b01(bullPBEnter) + "," +
+    b01(bullPBEnterExec) + "," +
+    str.tostring(bullPBScore) + "," +
+    str.tostring(pbVetoMask) + "," +
     str.tostring(bullPBAgeBars) + "," +
-    str.tostring(bullLegNoNewHiStreak) + "," +
     str.tostring(bullPBImpulseAgeBars) + "," +
-    str.tostring(bullPBFreshVeto ? 1 : 0) + "," +
-    str.tostring(pbMajorImpulse ? 1 : 0) + "," +
-    str.tostring(bullMajorImpulseAgeBars) + "," +
-    str.tostring(bullPBFreshVeto ? 1 : 0) + "," +
+    str.tostring(bullLegNoNewHiStreak) + "," +
     str.tostring(bullPBDepth / atr) + "," +
-    str.tostring(bullPBExtended ? 1 : 0) + "," +
-    str.tostring(bullPBShallow ? 1 : 0) + "," +
-    str.tostring(bullPBExhaustVeto ? 1 : 0) + "," +
-    str.tostring(bullPBLateStallVeto ? 1 : 0) + "," +
-    str.tostring(bullPBLifecycleVeto ? 1 : 0) + "," +
-    str.tostring(bullPBAgeVeto ? 1 : 0) + "," +
-    str.tostring(bullPBTouchOk ? 1 : 0) + "," +
-    str.tostring(bullPBEnter ? 1 : 0) + "," +
-    str.tostring(bullPBEnterExec ? 1 : 0) + "," +
     str.tostring(bullStartBar) + "," +
     str.tostring(bullPBMaxAgeBars) + "," +
-    str.tostring(mode == Mode.Bull ? 1 : 0) + "," +
-    str.tostring(bullArmed ? 1 : 0)
-)
-
-// --- PB-Guard v2 (exhaustion micro-PB filter) ---
-
-if bullPBEnterExec
-    // ---- L1 PB snapshot latched at PB fill (so L1 row can carry PBDEC context) ----
-    L1_pbVetoMaskEnt       := pbVetoMask
-    L1_pbMajorImpulseEnt   := pbMajorImpulse ? 1 : 0
-    L1_pbImpulseAgeBarsEnt := bullPBImpulseAgeBars
-    L1_pbStallCountEnt     := pbStallCount
-    L1_pbHighFailEnt       := pbHighFail ? 1 : 0
-    L1_pbScoreEnt          := bullPBScore
-    L1_pbAdxSlopeEnt      := adxSlopeNow
-    L1_pbAgeBarsEnt       := bullPBAgeBars
-    L1_pbNoNewHiStreakEnt := bullLegNoNewHiStreak
-    L1_pbDepthAtrEnt      := bullPBDepth / atr
-    L1_pbExpAgeBarsEnt    := bullPBExpAgeBars
-    L1_pbTouchOkEnt       := bullPBTouchOk ? 1 : 0
-    L1_pbHHProofOkEnt     := bullPB_HHProofOk ? 1 : 0
-    strategy.entry("LONG", strategy.long, comment="BULL_PB")
-    label.new(
-        bar_index,
-        high,
-        "stallCnt=" + str.tostring(pbStallCount) + 
-        " highFail=" + str.tostring(pbHighFail),
-        style=label.style_label_down,
-        textcolor=color.white,
-        color=color.red,
-        size=size.small
+    b01(mode == Mode.Bull) + "," +
+    b01(bullArmed)
     )
 
-    // ---- END BULL on entry consumption (STRUCTURE-ANCHORED) ----
+bool bullPBLikeEnter = bullPBImpulseDelayedConfirmEnter or bullInitEarlyEnter or bullPBEnterExec
+bool bullAnyMainEnter = bullPBLikeEnter or bullCompEnter or bullImpulseEnter
+
+string bullEntryComment =
+     bullPBLikeEnter ? (bullPBImpulseDelayedConfirmEnter ? "BULL_PB_IMP_DELAY_CONFIRM" : bullInitEarlyEnter ? "BULL_INIT_EARLY" : "BULL_PB") :
+     bullCompEnter ? "BULL_COMP" :
+     (bullLaunchConfirmEnter ? "BULL_LAUNCH" : "BULL_START")
+
+string bullEntryArch =
+     bullPBLikeEnter ? (bullPBImpulseDelayedConfirmEnter ? "BULL_PB_IMP_DELAY_CONFIRM" : bullInitEarlyEnter ? "BULL_INIT_EARLY" : "BULL_PB_RECLAIM") :
+     bullCompEnter ? "BULL_COMP" :
+     (bullLaunchConfirmEnter ? "BULL_LAUNCH" : "BULL_START")
+
+int bullEntryQualMask =
+     bullPBLikeEnter ? qualMask(bullArmed, true, htfOnNow, true) :
+     bullCompEnter ? qualMask(true, false, htfOnNow, bullCompNotChase) :
+     qualMask(true, false, htfOnNow, (bullStartNotExtended and bullStartNotExtendedEMA and bullStartNoChase))
+
+if bullAnyMainEnter
+    if bullPBLikeEnter
+        L1_pbVetoMaskEnt       := bullPBImpulseDelayedConfirmEnter ? bullPBImpDelayMask : pbVetoMask
+        L1_pbMajorImpulseEnt   := pbMajorImpulse ? 1 : 0
+        L1_pbImpulseAgeBarsEnt := bullPBImpulseAgeBars
+        L1_pbStallCountEnt     := pbStallCount
+        L1_pbHighFailEnt       := pbHighFail ? 1 : 0
+        L1_pbScoreEnt          := bullPBScore
+        L1_pbAdxSlopeEnt       := adxSlopeNow
+        L1_pbAgeBarsEnt        := bullPBAgeBars
+        L1_pbNoNewHiStreakEnt  := bullLegNoNewHiStreak
+        L1_pbDepthAtrEnt       := bullPBDepth / atr
+        L1_pbExpAgeBarsEnt     := bullPBExpAgeBars
+        L1_pbTouchOkEnt        := bullPBTouchOk ? 1 : 0
+        L1_pbHHProofOkEnt      := bullPB_HHProofOk ? 1 : 0
+
+        pbPreInvTrackActive   := true
+        pbPreInvEligible      := false
+        pbPreInvArmed         := false
+        pbPreInvEligBar       := na
+        pbPreInvBarsAfterElig := 0
+        pbPreInvStartHigh     := na
+        pbPreInvHighAfterElig := na
+        pbPreInvLowAfterElig  := na
+        pbPreInvNoNewHiStreak := 0
+        pbPreInvStallCount    := 0
+        pbPreInvRejectCount   := 0
+
+    strategy.entry("LONG", strategy.long, comment=bullEntryComment)
+
     posTag := "BULL"
     entryModeTag := "BULL"
     rbFromPBBlock := false
     L1_pendDir  := "LONG"
     L1_pendReg  := "BULL"
-    L1_pendArch := "BULL_PB_RECLAIM"
+    L1_pendArch := bullEntryArch
 
-    L1_pendEntryEngine  := "BULL_PB"
+    L1_pendEntryEngine  := bullEntryComment
     L1_pendHtfState     := htfOnNow ? "HTF_ON" : "HTF_OFF"
     L1_pendHtfFlipEvent := htfFlipEventNow
     L1_pendLastFlipType := lastBullFlipType
     L1_pendAcceptUpCnt  := bullAcceptUpCnt
-    L1_pendQualMask     := qualMask(bullArmed, true, htfOnNow, true)
+    L1_pendQualMask     := bullEntryQualMask
 
     L1_pendMode      := modeToStr(mode)
     L1_pendModeScore := l2_modeScoreNow
@@ -3614,70 +4479,10 @@ if bullPBEnterExec
     L1_pendCloseLoc  := closeLoc
     L1_pendRngAtr    := (atr > 0 ? (rng / atr) : na)
 
-    // Distances (ATR)
-    L1_pendDistEFATR := (atr > 0 ? math.abs(close - emaFast) / atr : na)
-    L1_pendDistESATR := (atr > 0 ? math.abs(close - emaSlow) / atr : na)
-
-    // Bull-level distance only meaningful for Bull, but safe for others (na if bullLevel na)
+    L1_pendDistEFATR   := (atr > 0 ? math.abs(close - emaFast) / atr : na)
+    L1_pendDistESATR   := (atr > 0 ? math.abs(close - emaSlow) / atr : na)
     L1_pendDistBullATR := (atr > 0 and not na(bullLevel)) ? math.abs(close - bullLevel) / atr : na
 
-    // Timing context
-    L1_pendBSI := l2_barsSince(l2_lastImpulseBar)
-    L1_pendBSA := l2_barsSince(l2_lastAcceptBar)
-    L1_pendBSR := l2_barsSince(l2_lastReclaimBar)
-
-
-    entered := true
-    bullTP1Done := false
-    bullTP0Done := false
-    entryMode := Mode.Bull
-    // Freeze bullLevel already set; consume bull setup
-    bullArmed := false
-    pendingBull := false
-    pendingBullBar := na
-    bullPBSeen := false
-    bullPBBar := na
-    bullPBLow := na
-    bullLastAddBar := na
-    bullHH := na
-    bullArmRollHigh := na
-    bullHHBar := na
-
-
-else if bullCompEnter
-    strategy.entry("LONG", strategy.long, comment="BULL_COMP")
-
-    posTag := "BULL"
-    entryModeTag := "BULL"
-    rbFromPBBlock := false
-    L1_pendDir  := "LONG"
-    L1_pendReg  := "BULL"
-    L1_pendArch := "BULL_COMP"
-
-    L1_pendEntryEngine  := "BULL_COMP"
-    L1_pendHtfState     := htfOnNow ? "HTF_ON" : "HTF_OFF"
-    L1_pendHtfFlipEvent := htfFlipEventNow
-    L1_pendLastFlipType := lastBullFlipType
-    L1_pendAcceptUpCnt  := bullAcceptUpCnt
-    L1_pendQualMask     := qualMask(true, false, htfOnNow, bullCompNotChase)
-
-    L1_pendMode      := modeToStr(mode)
-    L1_pendModeScore := l2_modeScoreNow
-    L1_pendAdx       := adx
-    L1_pendAdxRising := (adxRising ? 1 : 0)
-
-    L1_pendBodyPct   := bodyPct
-    L1_pendCloseLoc  := closeLoc
-    L1_pendRngAtr    := (atr > 0 ? (rng / atr) : na)
-
-    // Distances (ATR)
-    L1_pendDistEFATR := (atr > 0 ? math.abs(close - emaFast) / atr : na)
-    L1_pendDistESATR := (atr > 0 ? math.abs(close - emaSlow) / atr : na)
-
-    // Bull-level distance only meaningful for Bull, but safe for others (na if bullLevel na)
-    L1_pendDistBullATR := (atr > 0 and not na(bullLevel)) ? math.abs(close - bullLevel) / atr : na
-
-    // Timing context
     L1_pendBSI := l2_barsSince(l2_lastImpulseBar)
     L1_pendBSA := l2_barsSince(l2_lastAcceptBar)
     L1_pendBSR := l2_barsSince(l2_lastReclaimBar)
@@ -3687,83 +4492,50 @@ else if bullCompEnter
     bullTP0Done := false
     entryMode := Mode.Bull
 
-    // Consume setup (COMP consumes the armed state)
+    // ---- PROFILE_BREAKDOWN_DRIFT Wave 1 init ----
+    pd_holdContActive       := true
+    pd_holdEntryBar         := bar_index
+    pd_holdBarsIn           := 0
+    pd_lastContHigh         := high
+    pd_lastContHighBar      := bar_index
+    pd_barsSinceContHigh    := 0
+    pd_pullbackLowSinceHigh := low
+    pd_pullbackDepthATR     := 0.0
+    pd_noNewHighStreak      := 0
+    pd_recentExpansionAlive := true
+
+
+    // Clear pending COMP state on any bull main entry
+    bullCompArmed := false
+    bullCompArmBar := na
+    bullCompHi := na
+
+    if bullImpulseEnter
+        bullImpulseDone := true
+
+    // Consume bull setup
     bullArmed := false
     pendingBull := false
     pendingBullBar := na
     bullPBSeen := false
-    bullPBBar := na
+    pbSpsArmed := false
+    pbSpsBar := na
+    pbSpsBestHi := na
+    pbSpsStopLo := na
+    pbSpsMinLo := na
+    pbSpsStopClose := na
+    pbSpsHH := 0
+    pbSpsRec := 0
+    bullNonRetryBlockedReclaimBar := na
     bullPBLow := na
     bullLastAddBar := na
     bullHH := na
-    bullArmRollHigh := na
-    bullHHBar := na
-
-
-else if bullImpulseEnter
-    strategy.entry("LONG", strategy.long, comment="BULL_START")
-
-    posTag := "BULL"
-    entryModeTag := "BULL"
-    rbFromPBBlock := false
-    L1_pendDir  := "LONG"
-    L1_pendReg  := "BULL"
-    L1_pendArch := "BULL_START"
-
-    L1_pendEntryEngine  := "BULL_START"
-    L1_pendHtfState     := htfOnNow ? "HTF_ON" : "HTF_OFF"
-    L1_pendHtfFlipEvent := htfFlipEventNow
-    L1_pendLastFlipType := lastBullFlipType
-    L1_pendAcceptUpCnt  := bullAcceptUpCnt
-    L1_pendQualMask     := qualMask(true, false, htfOnNow, (bullStartNotExtended and bullStartNotExtendedEMA and bullStartNoChase))
-
-    L1_pendMode      := modeToStr(mode)
-    L1_pendModeScore := l2_modeScoreNow
-    L1_pendAdx       := adx
-    L1_pendAdxRising := (adxRising ? 1 : 0)
-
-    L1_pendBodyPct   := bodyPct
-    L1_pendCloseLoc  := closeLoc
-    L1_pendRngAtr    := (atr > 0 ? (rng / atr) : na)
-
-    // Distances (ATR)
-    L1_pendDistEFATR := (atr > 0 ? math.abs(close - emaFast) / atr : na)
-    L1_pendDistESATR := (atr > 0 ? math.abs(close - emaSlow) / atr : na)
-
-    // Bull-level distance only meaningful for Bull, but safe for others (na if bullLevel na)
-    L1_pendDistBullATR := (atr > 0 and not na(bullLevel)) ? math.abs(close - bullLevel) / atr : na
-
-    // Timing context
-    L1_pendBSI := l2_barsSince(l2_lastImpulseBar)
-    L1_pendBSA := l2_barsSince(l2_lastAcceptBar)
-    L1_pendBSR := l2_barsSince(l2_lastReclaimBar)
-
-    entered := true
-    bullTP1Done := false
-    bullTP0Done := false
-    entryMode := Mode.Bull
-
-    // Consume setup
-    bullImpulseDone := true
-    bullArmed := false
-    pendingBull := false
-    pendingBullBar := na
-    bullPBSeen := false
-    bullPBBar := na
-    bullPBLow := na
-    bullLastAddBar := na
-    bullHH := na
-    bullArmRollHigh := na
-    bullHHBar := na
-
-
 
     // keep bullStructLow for invalidation
 
 if barstate.isconfirmed and bullAddEnter
     strategy.entry("LONG_ADD", strategy.long)
     bullLastAddBar := bar_index
-    c_addSig += 1
     if exportToLogs
         L1_addCount += 1
 
@@ -3841,7 +4613,17 @@ if entered
     lastEntryBar := bar_index
     tradeHi := high
     tradeLo := low
+    bearOpenProfitMax := na
 
+// --- Close-based stall tracking (fix for wick-chop) ---
+if (not inPos) or (not isLong) or (posTag != "BULL")
+    bullBestClose := na
+    bullNoNewCloseStreak := 0
+else
+    float _prevBullBestClose = bullBestClose
+    bullBestClose := na(bullBestClose) ? close : math.max(bullBestClose, close)
+    bullNoNewCloseStreak := na(_prevBullBestClose) ? 0 : ((close >= _prevBullBestClose) ? 0 : (bullNoNewCloseStreak + 1))
+    
 // ---- L2 window log: ENTRY ----
 if entered and exportL2 and barstate.isconfirmed
     string _evtType = "ENTRY_" + entryModeTag
@@ -3905,84 +4687,57 @@ if inPos
     tradeHi := na(tradeHi) ? high : math.max(tradeHi, high)
     tradeLo := na(tradeLo) ? low  : math.min(tradeLo, low)
 
-// ---- Bull runner stall tracking (confirmed only) ----
-// Counts consecutive confirmed bars with NO new tradeHi while in BULL.
+//====================================================
+// PROFILE_BREAKDOWN_DRIFT — ENA-like PB continuation-failure tracker
+// PB checkpoint -> some life -> stall/reject/giveback -> PRE_BULL_INV_HARVEST
+//====================================================
 if barstate.isconfirmed
-    if inPos and posTag == "BULL"
-        bullNoNewHiStreak := (tradeHi <= nz(tradeHi[1])) ? (nz(bullNoNewHiStreak[1]) + 1) : 0
+    [pbPreInvEligible, pbPreInvArmed, pbPreInvEligBar, pbPreInvBarsAfterElig, pbPreInvStartHigh, pbPreInvHighAfterElig, pbPreInvLowAfterElig, pbPreInvNoNewHiStreak, pbPreInvStallCount, pbPreInvRejectCount] = f_pbPreInvUpdate(inPos and isLong and (posTag == "BULL") and (L1_entryEngine == "BULL_PB") and pbPreInvTrackActive, na(lastEntryBar) ? 0 : (bar_index - lastEntryBar), atr, rng, bodyPct, closeLoc, high, low, close, bullTP1Done, pbPreInvEligible, pbPreInvArmed, pbPreInvEligBar, pbPreInvBarsAfterElig, pbPreInvStartHigh, pbPreInvHighAfterElig, pbPreInvLowAfterElig, pbPreInvNoNewHiStreak, pbPreInvStallCount, pbPreInvRejectCount)
+
+//====================================================
+// PROFILE_BREAKDOWN_DRIFT — Wave 1 updater
+// HOLD_CONT + MATURITY tracking (confirmed bars only)
+//====================================================
+if barstate.isconfirmed
+    if inPos and isLong and (posTag == "BULL") and pd_holdContActive
+        pd_holdBarsIn := na(pd_holdEntryBar) ? 0 : (bar_index - pd_holdEntryBar)
+
+        // PB timer becomes eligibility only
+        bool pd_newContHigh = na(pd_lastContHigh) or (high > pd_lastContHigh)
+
+        if pd_newContHigh
+            pd_lastContHigh         := high
+            pd_lastContHighBar      := bar_index
+            pd_barsSinceContHigh    := 0
+            pd_pullbackLowSinceHigh := low
+            pd_pullbackDepthATR     := 0.0
+            pd_noNewHighStreak      := 0
+        else
+            pd_barsSinceContHigh    := na(pd_lastContHighBar) ? na : (bar_index - pd_lastContHighBar)
+            pd_noNewHighStreak      += 1
+            pd_pullbackLowSinceHigh := na(pd_pullbackLowSinceHigh) ? low : math.min(pd_pullbackLowSinceHigh, low)
+            pd_pullbackDepthATR     := (atr > 0 and not na(pd_lastContHigh) and not na(pd_pullbackLowSinceHigh)) ? ((pd_lastContHigh - pd_pullbackLowSinceHigh) / atr) : na
+
+        bool pd_nearRecentHigh =
+             (atr > 0 and not na(pd_lastContHigh)) ? (close >= (pd_lastContHigh - atr * pdNearHighATR)) : false
+
+        pd_recentExpansionAlive :=
+             ((not na(pd_barsSinceContHigh)) and (pd_barsSinceContHigh <= pdRecentHighBars)) or
+             pd_nearRecentHigh
+
+
     else
-        bullNoNewHiStreak := 0
+        pd_recentExpansionAlive := false
 
-// --- Close-based stall tracking (fix for wick-chop) ---
-var float bullBestClose = na
-var int   bullNoNewCloseStreak = 0
-
-if (not inPos) or (not isLong) or (posTag != "BULL")
-    bullBestClose := na
-    bullNoNewCloseStreak := 0
-else
-    bullBestClose := na(bullBestClose) ? close : math.max(bullBestClose, close)
-    bullNoNewCloseStreak := (close >= bullBestClose[1]) ? 0 : (bullNoNewCloseStreak + 1)
-
-
-//====================================================
-// L2 Candidate events (missed-opportunity triggers) + blocked masks
-//====================================================
-
-// --- Candidate: Bull PB reclaim signal existed, but entry didn't happen (flat)
-bullCand = barstate.isconfirmed and (not inPos) and bullReclaimNow
-
-bullCandBlocked =
-     bullCand and (
-        (mode != Mode.Bull) or
-        (not scoreGateOk(Mode.Bull)) or
-        (not bullLocalTrendOk) or
-        (not htfBullOk) or
-        (bullUseDMI and not (pdi > mdi)) or
-        (not adxBullPBExecOk) or
-        bearActive or pendingBear
-     )
-
-bullBlkMask = 0
-bullBlkMask += (not htfBullOk) ? BLK_HTF : 0
-bullBlkMask += (not adxBullPBExecOk) ? BLK_ADX : 0
-bullBlkMask += ((mode != Mode.Bull)) ? BLK_WINDOW : 0
-bullBlkMask += (not scoreGateOk(Mode.Bull)) ? BLK_SCORE : 0
-bullBlkMask += ((bearActive or pendingBear)) ? BLK_BEAR : 0
-bullBlkMask += ((not bullLocalTrendOk) ? BLK_OTHER : 0)
-
-// --- Candidate: RA decision event exists, but entry didn't happen
-raCand = barstate.isconfirmed and (not inPos) and raDecision
-
-raCandBlocked =
-     raCand and (
-        (mode != Mode.RangeA) or
-        (not raEntryOk)   // includes risk/RR, RSI, ADX, etc.
-     )
-
-raBlkMask = 0
-raBlkMask += (mode != Mode.RangeA) ? BLK_WINDOW : 0
-raBlkMask += ((not adxRAOk) ? BLK_ADX : 0)
-raBlkMask += ((not raRiskOk or not raRROkHard) ? BLK_OTHER : 0)
-raBlkMask += ((not raRsiOk) ? BLK_OTHER : 0)
-raBlkMask += ((bearActive or pendingBear or (not bearLockoutOk)) ? BLK_BEAR : 0)
-raBlkMask += ((not htfOffForRA) ? BLK_HTF : 0)
-
-// --- Candidate: Bear breakdown exists, but entry didn't happen
-bearCand = barstate.isconfirmed and (not inPos) and bearShortBreakdownNow
-
-bearCandBlocked =
-     bearCand and (
-        (not bearShortEnter)
-     )
-
-bearBlkMask = 0
-bearBlkMask += ((not bearShortADXOk) ? BLK_ADX : 0)
-bearBlkMask += ((not bearReentryOk) ? BLK_SPACING : 0)
-bearBlkMask += ((not shortCooldownOk) ? BLK_HTF : 0)
-bearBlkMask += ((not bearLocalDowntrendOk) ? BLK_OTHER : 0)
-bearBlkMask += (bearBD_WeakCloseSlopeVeto ? BLK_OTHER : 0)
-
+// ---- Candidate-block defaults (restores missing declarations) ----
+// These preserve compile safety for the L2 candidate window logger.
+// If you later restore the full candidate-mask builder, replace these defaults there.
+bool bullCandBlocked = false
+int  bullBlkMask     = 0
+bool raCandBlocked   = false
+int  raBlkMask       = 0
+bool bearCandBlocked = false
+int  bearBlkMask     = 0
 
 // ---- L2 window log: CANDIDATES (missed opportunities) ----
 if exportL2 and barstate.isconfirmed and (not inPos)
@@ -4038,7 +4793,7 @@ if exportL2 and barstate.isconfirmed and (not inPos)
 // L1 max-fav/max-adv tracking (bar index + price)
 //====================================================
 if exportToLogs and inPos
-    if strategy.position_size > 0
+    if posSize > 0
         // LONG: favorable = higher high, adverse = lower low
         if na(L1_maxFavPx) or (high > L1_maxFavPx)
             L1_maxFavPx  := high
@@ -4066,8 +4821,12 @@ exitOk = na(lastEntryBar) or (bar_index > lastEntryBar)
 //====================================================
 closeLongAll(_comment) =>
     // Close both possible long entry-ids used by this script.
-    strategy.close("LONG",     comment=_comment)
-    strategy.close("LONG_ADD", comment=_comment)
+    bool _immediate =
+     (_comment == "BULL_PB_RUNNER_NO_PROOF") or
+     (_comment == "BULL_PB_WEAK_TP0_RUNNER") or
+     (_comment == "BULL_PB_IMMEDIATE_MFE_NO_PROOF")
+    strategy.close("LONG",     comment=_comment, immediately=_immediate)
+    strategy.close("LONG_ADD", comment=_comment, immediately=_immediate)
 
 closeShortAll(_comment) =>
     // Close both possible short entry-ids used by this script.
@@ -4077,7 +4836,7 @@ closeShortAll(_comment) =>
 
 // Targets
 float bullTP0Price = (inPos and posTag == "BULL")
-     ? (strategy.position_avg_price + atr * bullTP0_ATR)
+     ? (posAvg + atr * bullTP0_ATR)
      : na
 
 bool bullTP0Hit =
@@ -4088,7 +4847,7 @@ bool bullTP0Hit =
      (high >= bullTP0Price)
 
 float bullTP1Price = (inPos and posTag == "BULL")
-     ? (strategy.position_avg_price + atr * bullTP1_ATR)
+     ? (posAvg + atr * bullTP1_ATR)
      : na
 
 bool bullTP1Hit =
@@ -4098,7 +4857,7 @@ bool bullTP1Hit =
      (not na(bullTP1Price)) and
      (high >= bullTP1Price)
 float bearTP0Price = (inPos and posTag == "BEAR")
-     ? (strategy.position_avg_price - atr * bearTP0_ATR)
+     ? (posAvg - atr * bearTP0_ATR)
      : na
 
 bool bearTP0Hit =
@@ -4109,13 +4868,13 @@ bool bearTP0Hit =
      (close <= bearTP0Price)
 
 // Bear TP1 target: 0.8R based on stop distance (bearReclLvl - entry). Fallback to ATR target if stop distance is unknown.
-float bearRisk = (inPos and posTag == "BEAR" and not na(bearReclLvl)) ? (bearReclLvl - strategy.position_avg_price) : na
+float bearRisk = (inPos and posTag == "BEAR" and not na(bearReclLvl)) ? (bearReclLvl - posAvg) : na
 
 float bearTP1Price = (inPos and posTag == "BEAR")
      ? (
          (not na(bearRisk) and bearRisk > 0)
-             ? (strategy.position_avg_price - bearRisk * bearTP1_R)
-             : (strategy.position_avg_price - atr * bearTP1_ATR)
+             ? (posAvg - bearRisk * bearTP1_R)
+             : (posAvg - atr * bearTP1_ATR)
        )
      : na
 
@@ -4143,6 +4902,22 @@ if not inPos
     bearTP0EntryPx := na
 if not inPos
     bullTP0Done := false
+    bullTP0Bar := na
+    bullTP0Hi := na
+    bullTP0BarOpen := na
+    bullTP0BarHigh := na
+    bullTP0BarLow := na
+    bullTP0BarClose := na
+    bullTP0BarATR := na
+    bullTP0BarBodyPct := na
+    bullTP0BarCloseLoc := na
+    bullTP0BarDistEFATR := na
+    bullTP0BarDistESATR := na
+    bullTP0WeakQuality := false
+    bullPBDelayedProofPending := false
+    bullPBDelayedProofValidated := false
+    bullPBDelayedProofBar := na
+    bullPBDelayedProofHi := na
 if not inPos 
     bearEntryArch := na
 if not inPos 
@@ -4169,19 +4944,73 @@ if not inPos
     L2_dbg_bearEntryArch := na
     L2_dbg_bearTP0Done := na
     L2_dbg_posTagBear := na
+if (not inPos) or (not isLong) or (posTag != "BULL") or (L1_entryEngine != "BULL_PB")
+    pbPreInvTrackActive   := false
+    pbPreInvEligible      := false
+    pbPreInvArmed         := false
+    pbPreInvEligBar       := na
+    pbPreInvBarsAfterElig := 0
+    pbPreInvStartHigh     := na
+    pbPreInvHighAfterElig := na
+    pbPreInvLowAfterElig  := na
+    pbPreInvNoNewHiStreak := 0
+    pbPreInvStallCount    := 0
+    pbPreInvRejectCount   := 0
+if (not inPos) or (not isLong) or (posTag != "BULL")
+    pd_holdContActive       := false
+    pd_holdEntryBar         := na
+    pd_holdBarsIn           := 0
+    pd_lastContHigh         := na
+    pd_lastContHighBar      := na
+    pd_barsSinceContHigh    := na
+    pd_pullbackLowSinceHigh := na
+    pd_pullbackDepthATR     := na
+    pd_noNewHighStreak      := 0
+    pd_recentExpansionAlive := false
+    bullInvPostTP0Streak := 0
 
 //====================================================
 // Bull TP0 partial (early de-risk; mirrors BEAR_TP0)
 //====================================================
 if exitOk and bullTP0Hit
-    strategy.close("LONG", qty_percent=bullTP0_Pct, comment="BULL_TP0")
+    float q = ((L1_entryEngine=="BULL_INIT_EARLY" and (L1_pbImpulseAgeBarsEnt>=60 or (L1_pbImpulseAgeBarsEnt>=5 and L1_pbNoNewHiStreakEnt>=2))) or (L1_entryEngine=="BULL_PB" and L1_pbAgeBarsEnt>=8 and L1_pbImpulseAgeBarsEnt>=7 and L1_pbImpulseAgeBarsEnt<=20 and L1_pbExpAgeBarsEnt<=2)) ? 100 : bullTP0_Pct
+    strategy.close("LONG", qty_percent=q, comment="BULL_TP0")
     bullTP0Done := true
+    bullTP0Bar := bar_index
+    bullTP0Hi := tradeHi
 
-    // NOTE: TP0 is a partial, but not TP1 -> do NOT touch L1_tp1Hit or c_tp1Hits here.
+    // TP0-bar discriminator snapshot
+    bullTP0BarOpen := open
+    bullTP0BarHigh := high
+    bullTP0BarLow := low
+    bullTP0BarClose := close
+    bullTP0BarATR := atr
+    bullTP0BarBodyPct := bodyPct
+    bullTP0BarCloseLoc := closeLoc
+    bullTP0BarDistEFATR := (atr > 0) ? math.abs(close - emaFast) / atr : na
+    bullTP0BarDistESATR := (atr > 0) ? math.abs(close - emaSlow) / atr : na
+
+    // PROFILE_BREAKDOWN_DRIFT — same-bar weak TP0 rejection classifier
+    // ONDO-type case: TP0 is reached, but the TP0 bar itself rejects/stalls.
+    float bullTP0UpperWickFrac = rng > 0 ? (high - math.max(open, close)) / rng : 0.0
+
+    bullTP0WeakQuality :=
+         (L1_entryEngine == "BULL_PB") and
+         (not na(bullTP0BarCloseLoc)) and
+         (not na(bullTP0BarBodyPct)) and
+         (bullTP0BarCloseLoc <= 0.35) and
+         (bullTP0BarBodyPct <= 0.35) and
+         (bullTP0UpperWickFrac >= 0.55)
+
+    L1_tp0Hit := true
+    if na(L1_tp0Bar)
+        L1_tp0Bar := bar_index
+
+    // NOTE: TP0 is a partial, but not TP1 -> do NOT touch c_tp1Hits here.
 
     if exportToLogs
         L1_nPartials += 1
-        L1_partialPctSum += bullTP0_Pct
+        L1_partialPctSum += q
         if na(L1_firstPartialBar)
             L1_firstPartialBar := bar_index
             L1_firstPartialTime := time
@@ -4196,9 +5025,9 @@ if exitOk and bullTP1Hit
     // partial close ONLY the base long id
     strategy.close("LONG", qty_percent=bullTP1_Pct, comment="BULL_TP1")
     bullTP1Done := true
-    if exportToLogs
-        L1_tp1Hit := true
-    c_tp1Hits += 1
+    L1_tp1Hit := true
+    if na(L1_tp1Bar)
+        L1_tp1Bar := bar_index
 
     // ---- L1 partial aggregates (for the full trade) ----
     if exportToLogs
@@ -4216,7 +5045,10 @@ if exitOk and bearTP0Hit
     bearTP0Done := true 
     bearTP0Bar := bar_index 
     bearTP0Lo := tradeLo 
-    bearTP0EntryPx := strategy.position_avg_price
+    bearTP0EntryPx := posAvg
+    L1_tp0Hit := true
+    if na(L1_tp0Bar)
+        L1_tp0Bar := bar_index
 
     // NOTE: TP0 is a partial, but not TP1 -> do NOT touch L1_tp1Hit or c_tp1Hits here.
 
@@ -4230,16 +5062,16 @@ if exitOk and bearTP0Hit
         L1_lastPartialTime := time
         L1_partialReasons := (L1_partialReasons == "" ? "BEAR_TP0" : (L1_partialReasons + "|" + "BEAR_TP0"))
 
+
 if exitOk and (bearBD_ReclaimExitNow or bearACC_ReclaimExitNow)
     closeShortAll("BEAR_RECLAIM_EXIT")
 
 if exitOk and bearTP1Hit
-    // partial close ONLY the base short id
     strategy.close("SHORT", qty_percent=bearTP1_Pct, comment="BEAR_TP1")
     bearTP1Done := true
-    if exportToLogs
-        L1_tp1Hit := true
-    c_tp1Hits += 1
+    L1_tp1Hit := true
+    if na(L1_tp1Bar)
+        L1_tp1Bar := bar_index
 
     // ---- L1 partial aggregates (for the full trade) ----
     if exportToLogs
@@ -4259,13 +5091,247 @@ raStopLevel = not na(raStopBase) ? (raStopBase - atr * raStop_ATR) : na
 raStopHit = inPos and (posTag == "RANGEA") and not na(raStopLevel) and (close < raStopLevel) and (not raStopNeed2Cl or close[1] < raStopLevel)
 
 // Time-stops
-bullMFE = (inPos and posTag=="BULL") ? (tradeHi - strategy.position_avg_price) : 0.0
+bullMFE = (inPos and posTag=="BULL") ? (tradeHi - posAvg) : 0.0
 bullBarsIn = (inPos and posTag=="BULL" and not na(lastEntryBar)) ? (bar_index - lastEntryBar) : 0
 
-// PB time-stop (engine-isolated): applies ONLY if the entryEngine that opened this position was BULL_PB
-pbTimeStop = inPos and posTag=="BULL" and (L1_entryEngine == "BULL_PB") and (bullBarsIn >= pbTS_Bars)
+// PB checkpoint raw eligibility
+bool pbTimeStopRaw =
+     inPos and
+     posTag=="BULL" and
+     (L1_entryEngine == "BULL_PB") and
+     (bullBarsIn >= pbTS_Bars)
+
+// If the PB trade has shown post-checkpoint life and is the ENA-like subgroup,
+// do NOT exit on the raw PB timer. Keep PB_TS only for the fast-collapse subtype.
+pbTimeStop =
+     pbTimeStopRaw and
+     (not pbPreInvArmed)
+
+// SPS dead-BULL_PB detector:
+// BULL_PB only, before TP0 only, wait 8 bars after pbTimeStop.
+// Exit only if structure fails to progress: SPS <= 2.
+if barstate.isconfirmed
+    bool pbSpsEligible = inPos and isLong and posTag=="BULL" and L1_entryEngine=="BULL_PB" and not bullTP0Done
+
+    if pbTimeStopRaw and pbSpsEligible and not pbSpsArmed
+        pbSpsArmed := true
+        pbSpsBar := bar_index
+        pbSpsBestHi := high
+        pbSpsStopLo := low
+        pbSpsMinLo := low
+        pbSpsStopClose := close
+        pbSpsHH := 0
+        pbSpsRec := 0
+
+    if pbSpsArmed and pbSpsEligible
+        int pbSpsAge = bar_index - pbSpsBar
+        if pbSpsAge > 0 and pbSpsAge <= 8
+            if high > pbSpsBestHi
+                pbSpsHH += 1
+                pbSpsBestHi := high
+            pbSpsMinLo := math.min(pbSpsMinLo, low)
+            if close > pbSpsStopClose
+                pbSpsRec += 1
+
+    if pbSpsArmed and (not pbSpsEligible)
+        pbSpsArmed := false
+
+// PB_POST_TRIGGER_TIGHTEN_v2
+// Weak PB continuation stall after TP0:
+// TP0 hit, no TP1, TP0+3 or later, still non-positive, high close-location entry
+pbPostTriggerTighten=inPos and posTag=="BULL" and L1_entryEngine=="BULL_PB" and bullTP0Done and not bullTP1Done and not na(L1_tp0Bar) and bar_index>=L1_tp0Bar+3 and strategy.openprofit<=0 and L1_closeLocEnt>=0.85
+
+int _entryBar = strategy.opentrades.entry_bar_index(0)
+
+bool bdBullPB=inPos and isLong and posTag=="BULL" and L1_entryEngine=="BULL_PB"
+
+[isPBRunnerManagedEntry,
+ bullPBProofCheckDue,
+ bullPBNoNewHighSinceTP0,
+ bullPBRunnerNegativeAtCheck,
+ bullPBWeakTP0Plus1CheckDue,
+ bullPBEarlyWeakTP0Plus1Exit,
+ bullPBImmediateTP0Override,
+ bullPBDelayedProofNow,
+ bullPBDelayedProofFollowThroughNow,
+ bullPBDelayedProofFailExit,
+ pbRunnerNoProofExit] = f_pbRunnerSignals(
+    inPos,
+    isLong,
+    posTag,
+    L1_entryEngine,
+    bullTP0Done,
+    bullTP1Done,
+    bullTP0Bar,
+    bullTP0Hi,
+    bullTP0BarHigh,
+    bullTP0BarLow,
+    bullTP0BarATR,
+    bullTP0BarCloseLoc,
+    bullTP0BarDistEFATR,
+    bullPBReclaimGateNow,
+    _entryBar,
+    bullPBDelayedProofPending,
+    bullPBDelayedProofValidated,
+    bullPBDelayedProofBar,
+    bullPBDelayedProofHi,
+    tradeHi,
+    strategy.openprofit,
+    close,
+    posAvg,
+    closeLoc,
+    bullCloseInvalid,
+    pd_noNewHighStreak
+)
+
+// PROFILE_BREAKDOWN_DRIFT — immediate-TP0 MFE no-proof de-risk
+// Same-bar TP0, weak TP0 close, MFE expands above TP0 high,
+// but by TP0+2 price has not accepted above TP0 high.
+// This de-risks the runner only; it does not block the entry.
+bool pbImmediateMfeNoProofRunnerExit =
+     bdBullPB and
+     bullTP0Done and
+     (not bullTP1Done) and
+     (not bullCloseInvalid) and
+     (not na(bullTP0Bar)) and
+     (bullTP0Bar == _entryBar) and
+     (bar_index == bullTP0Bar + 2) and
+     (not bullPBDelayedProofPending) and
+     (not bullPBDelayedProofValidated) and
+     (not na(bullTP0Hi)) and
+     (not na(bullTP0BarCloseLoc)) and
+     (bullTP0BarCloseLoc < 0.4693877551) and
+     (tradeHi > bullTP0Hi) and
+     (close <= bullTP0Hi)
+
+// PROFILE_BREAKDOWN_DRIFT — strict late PB runner containment
+bool pbLateNoProofSubtype =
+     bdBullPB and
+     (not na(L1_pbAgeBarsEnt)) and
+     (not na(L1_pbImpulseAgeBarsEnt)) and
+     (not na(L1_pbNoNewHiStreakEnt)) and
+     (not na(L1_bodyPctEnt)) and
+     (L1_pbAgeBarsEnt >= 9) and
+     (L1_pbImpulseAgeBarsEnt >= 10) and
+     (L1_pbNoNewHiStreakEnt >= 3) and
+     (L1_bodyPctEnt >= 0.70)
+
+bool pbLateNoProofRunnerExit =
+     pbLateNoProofSubtype and
+     bullTP0Done and
+     (not bullTP1Done) and
+     (not na(bullTP0Bar)) and
+     (bar_index == bullTP0Bar) and
+     (not bullCloseInvalid)
+
+// PROFILE_BREAKDOWN_DRIFT — WIF 03 Nov fresh PB runner containment
+bool pbFreshNoProofSubtype =
+     bdBullPB and
+     (not na(L1_pbImpulseAgeBarsEnt)) and
+     (not na(L1_pbNoNewHiStreakEnt)) and
+     (L1_pbImpulseAgeBarsEnt <= 2) and
+     (L1_pbNoNewHiStreakEnt == 0)
+
+bool pbFreshNoProofRunnerExit =
+     pbFreshNoProofSubtype and
+     bullTP0Done and
+     (not bullTP1Done) and
+     (not na(bullTP0Bar)) and
+     (bar_index == bullTP0Bar) and
+     (bar_index == _entryBar) and
+     (not bullCloseInvalid)
+
+// PROFILE_BREAKDOWN_DRIFT — weak TP0 runner containment
+// TP0 was reached, but TP0 bar quality is weak: poor close location,
+// weak body, and existing no-new-high pressure. Do not allow a weak
+// TP0 to become a full runner failure.
+bool pbWeakTP0QualityRunnerExit =
+     bdBullPB and
+     bullTP0Done and
+     bullTP0WeakQuality and
+     (not bullTP1Done) and
+     (not na(bullTP0Bar)) and
+     (bar_index == bullTP0Bar) and
+     (bar_index > _entryBar) and
+     (not bullCloseInvalid)
+
+float bullPBPostTP0ClosePct =
+     (bdBullPB and bullTP0Done and posAvg > 0)
+         ? ((close - posAvg) / posAvg) * 100.0
+         : na
+
+bool bullPBPostTP0ImmediateCollapse =
+     bullPBPostTP0CollapseOn and
+     bdBullPB and
+     bullTP0Done and
+     (not bullTP1Done) and
+     (not na(bullTP0Bar)) and
+     (bar_index == bullTP0Bar + 1) and
+     (not na(bullPBPostTP0ClosePct)) and
+     (bullPBPostTP0ClosePct <= bullPBPostTP0CollapsePct) and
+     (not bullCloseInvalid)
+
+bool bdBullInvEarlyDeath=not bullCloseInvalid and bdBullPB and ((not bullTP0Done and not bullPBDelayedProofPending and not bullPBDelayedProofValidated and bullBarsIn>=8 and bullBarsIn<=24 and bullMFE>0 and bullMFE<=atr*.9 and close<=posAvg-atr*.65 and close<emaFast and close<open) or (bullTP0Done and bullBarsIn<=16 and not bullTP1Done and bullNoNewCloseStreak>=5 and close<posAvg and close<emaFast and posAvg-tradeLo>=atr*1.25))
+float rg=math.max(high-low,syminfo.mintick)
+bool pbEPF=bdBullPB and not bullTP0Done and ((bar_index==_entryBar+2 and close<=posAvg*.97 and close<open and ((close-low)/rg)<=.25) or (bar_index==_entryBar+3 and close<=posAvg*.975 and close<open and (high-low)>=atr*.85 and ((close-low)/rg)<=.15 and ((high-low)>=atr*1.2 or close[1]<open[1])) or (bar_index==_entryBar+4 and close<=posAvg*.97 and close<open and (high-low)>=atr*1.2) or (bar_index==_entryBar+6 and close<=posAvg*.985 and close<open and tradeHi>=posAvg+atr*1.5 and ((close-low)/rg)<=.20) or (bar_index==_entryBar+6 and close<=posAvg*.97 and close<open and tradeHi<=posAvg+atr*1.5 and ((close-low)/rg)<=.35) or (bar_index==_entryBar+7 and close<=posAvg*.985 and close<open and tradeHi<=posAvg+atr*1.5 and ((close-low)/rg)<=.25 and close[1]<open[1]) or (bar_index==_entryBar+8 and close<=posAvg*.98 and close<open and tradeHi<=posAvg+atr*1.5)) and not bullCloseInvalid
+
+
+if bullPBDelayedProofNow and (not bullPBDelayedProofPending) and (not bullPBDelayedProofValidated)
+    bullPBDelayedProofPending := true
+    bullPBDelayedProofBar := bar_index
+    bullPBDelayedProofHi := tradeHi
+
+if bullPBDelayedProofFollowThroughNow
+    bullPBDelayedProofPending := false
+    bullPBDelayedProofValidated := true
 
 bullTimeStop = inPos and posTag=="BULL" and (bullBarsIn >= bullTS_Bars) and (bullMFE < atr * bullTS_MinMFE_ATR)
+
+//====================================================
+// PROFILE_BREAKDOWN_DRIFT — post-TP0 BULL_INV persistence filter
+// Fixes one-bar BULL_INV during compression/recovery.
+// Does NOT remove BULL_INV. It requires persistence only in protected runner state.
+//====================================================
+bool bullInvPostTP0Scope =
+     inPos and isLong and (posTag == "BULL") and
+     bullTP0Done and
+     (not bullTP1Done) and
+     htfBullOk and
+     (not bearExitNow) and
+     (not bearActive) and
+     (not pendingBear)
+
+if barstate.isconfirmed
+    if bullInvPostTP0Scope and bullCloseInvalid
+        bullInvPostTP0Streak += 1
+    else
+        bullInvPostTP0Streak := 0
+
+bool bullInvCompressionHold =
+     bullInvPostTP0Scope and
+     bullCloseInvalid and
+     (bullInvPostTP0Streak < 2)
+
+bool bullCloseInvalidExit =
+     bullCloseInvalid and
+     (not bullInvCompressionHold)
+
+//====================================================
+// PROFILE_BREAKDOWN_DRIFT — ENA-like PRE_BULL_INV_HARVEST
+// Armed only for PB trades with real post-checkpoint life
+//====================================================
+bool pbPreInvDegradeNow = f_pbPreInvDegradeNow(
+    pbPreInvArmed,
+    bullTP1Done,
+    pbPreInvNoNewHiStreak,
+    pbPreInvHighAfterElig,
+    pbPreInvRejectCount,
+    pbPreInvStallCount,
+    atr,
+    close,
+    emaFast,
+    bullCloseInvalid
+)
 
 //====================================================
 // Bull MOM_LOSS (runner-only exit AFTER TP1) — Option B (gated)
@@ -4273,9 +5339,6 @@ bullTimeStop = inPos and posTag=="BULL" and (bullBarsIn >= bullTS_Bars) and (bul
 // BUT only in "weak context" (post-HTF weakening / post-cycle conditions).
 //====================================================
 int bullMomNoHHBars = 8          // stall window (no new highs)
-//int bullMomEmaCloses = 2         // rollover confirmation (consecutive closes below EMAfast)
-
-bool bullAfterEnd = inPos and isLong and (posTag == "BULL") and (not na(bullEndBar)) and (bar_index >= bullEndBar)
 int  tp1AgeBars   = bullTP1Done ? (bar_index - bullTP1Bar) : 999999
 bool tp1RecentOk  = bullTP1Done and (tp1AgeBars <= bullMomMaxBarsAfterTP1)
 
@@ -4314,20 +5377,83 @@ raBarsIn = (inPos and posTag=="RANGEA" and not na(raEntryBar)) ? (bar_index - ra
 raTimeStop = inPos and posTag=="RANGEA" and (raBarsIn >= raTS_Bars)
 
 // Bear SHORT time-stop (must pay quickly)
-bearMFE = (inPos and posTag=="BEAR") ? (strategy.position_avg_price - tradeLo) : 0.0
+bearMFE = (inPos and posTag=="BEAR") ? (posAvg - tradeLo) : 0.0
 
 // ---- BEAR post-TP0 proof window (remainder-only) ----
-int bearTP0ProofWinBars = 2
+int bearTP0ProofWinBars = 3
 float bearTP0ProofExtPct = 0.30
-float bearTP0AddExtPct = (inPos and posTag=="BEAR" and bearTP0Done and not na(bearTP0Bar) and not na(bearTP0Lo) and not na(bearTP0EntryPx) and bearTP0EntryPx > 0) ? ((bearTP0Lo - tradeLo) / bearTP0EntryPx) * 100.0 : 0.0
+float bearTP0AddExtPct = (inPos and posTag=="BEAR" and bearTP0Done and not na(bearTP0Bar) and not na(bearTP0Lo) and not na(bearTP0EntryPx) and bearTP0EntryPx > 0) ? math.max(((bearTP0Lo - low) / bearTP0EntryPx) * 100.0, 0.0) : 0.0
 bool bearTP0ProofDue = inPos and posTag=="BEAR" and bearTP0Done and (not bearTP1Done) and (not na(bearTP0Bar)) and (bar_index >= (bearTP0Bar + bearTP0ProofWinBars))
 bool bearTP0NoExtExit = bearTP0ProofDue and (bearTP0AddExtPct < bearTP0ProofExtPct)
 
 bearBarsIn = (inPos and posTag=="BEAR" and not na(lastEntryBar)) ? (bar_index - lastEntryBar) : 0
 bearTimeStop = inPos and posTag=="BEAR" and (bearBarsIn >= bearTS_Bars) and (bearMFE < atr * bearTS_MinMFE_ATR)
 
+// ---- PROFILE_BREAKDOWN_DRIFT / BEAR_S_ACCEPT / WAIT / HTF_OFF / NON-PROOF / DELAYED-RECLAIM containment
+float bearOpenProfitMaxPct =
+     (inPos and posTag=="BEAR" and not na(bearOpenProfitMax) and (math.abs(posAvg * posSize) > 0)) ?
+     (bearOpenProfitMax / math.abs(posAvg * posSize)) * 100.0 : na
+
+float bearDriftReclaimRef = nz(L1_bearReclLvlEnt, bearReclLvlPos)
+
+bool bearDriftSubtypeEntryCtx =
+     eff_bearDriftNonProofReclaimOn and
+     inPos and (posTag=="BEAR") and
+     (L1_entryEngine == "BEAR_ENTRY") and
+     (L1_arch == "BEAR_S_ACCEPT") and
+     (L1_modeEnt == "WAIT") and
+     (L1_bearHtfOnEnt == 0)
+
+bool bearDriftReclaimCloseNow =
+     bearDriftSubtypeEntryCtx and
+     (not bearTP0Done) and
+     (not na(bearDriftReclaimRef)) and
+     (close >= bearDriftReclaimRef)
+
+if bearDriftSubtypeEntryCtx and (not bearTP0Done)
+    bearDriftReclaimCloseCnt := bearDriftReclaimCloseNow ? (nz(bearDriftReclaimCloseCnt[1]) + 1) : 0
+else
+    bearDriftReclaimCloseCnt := 0
+
+bool bearDriftNonProofReclaimExit =
+     bearDriftSubtypeEntryCtx and
+     (not bearTP0Done) and
+     (bearBarsIn >= eff_bearDriftNonProofMinReclaimRel) and
+     (bearBarsIn <= eff_bearDriftNonProofMaxReclaimRel) and
+     (bearDriftReclaimCloseCnt >= 2) and
+     (not na(bearOpenProfitMaxPct)) and
+     (bearOpenProfitMaxPct <= eff_bearDriftNonProofMaxMfePct)
+
+float bearTP0NeedMove = (inPos and posTag=="BEAR" and not na(bearTP0Price)) ? (posAvg - bearTP0Price) : na
+float bearTP0GotMove  = (inPos and posTag=="BEAR") ? math.max(posAvg - tradeLo, 0.0) : na
+float bearTP0Progress = (inPos and posTag=="BEAR" and not na(bearTP0NeedMove) and bearTP0NeedMove > 0) ? (bearTP0GotMove / bearTP0NeedMove) : na
+
+float bearFavorableExcursion = (inPos and posTag=="BEAR") ? math.max(posAvg - tradeLo, 0.0) : na
+bool bearTS_NoMeaningfulExcursion = inPos and posTag=="BEAR" and not na(bearFavorableExcursion) and (bearFavorableExcursion < atr * 0.4)
+
+bool _bearPreTP0Ctx = inPos and posTag=="BEAR" and not bearTP0Done and not na(bearTP0Progress)
+
+bool bearTS_DeadShortFast = bearTS_ProgOn and _bearPreTP0Ctx and bearBarsIn >= 10 and bearTP0Progress <= 0 and not na(bearFavorableExcursion) and bearFavorableExcursion <= syminfo.mintick
+
+bool bearPreTP0StaleExit = bearPreTP0StaleOn and _bearPreTP0Ctx and bearBarsIn >= bearPreTP0StaleBars and bearTP0Progress < bearPreTP0MinTP0Frac
+
+// --- BEAR progressive time-stop (pre full TS) ---
+bool bearTS_ProgExit = false
+
+if bearTS_ProgOn and inPos and posTag=="BEAR" and not bearTP0Done and not na(bearTP0Progress)
+    bearTS_ProgExit :=
+         bearTS_DeadShortFast or
+         (
+             bearTS_NoMeaningfulExcursion and
+             (
+                 (bearBarsIn >= bearTS_Chk3_Bars and bearTP0Progress < bearTS_Chk3_Prog) or
+                 (bearBarsIn >= bearTS_Chk2_Bars and bearTP0Progress < bearTS_Chk2_Prog) or
+                 (bearBarsIn >= bearTS_Chk1_Bars and bearTP0Progress < bearTS_Chk1_Prog)
+             )
+         )
+
 // RB SHORT time-stop (must pay quickly)
-rbSMFE = (inPos and posTag=="RANGEB" and isShort) ? (strategy.position_avg_price - tradeLo) : 0.0
+rbSMFE = (inPos and posTag=="RANGEB" and isShort) ? (posAvg - tradeLo) : 0.0
 rbSBarsIn = (inPos and posTag=="RANGEB" and isShort and not na(lastEntryBar)) ? (bar_index - lastEntryBar) : 0
 rbShortTimeStop = inPos and (posTag=="RANGEB") and isShort and (rbSBarsIn >= rbS_TS_Bars) and (rbSMFE < atr * rbS_TS_MinMFE_ATR)
 
@@ -4359,27 +5485,116 @@ if exitOk and inPos
         exitReason := "BULL_MOM_LOSS"
         exitReg := "BULL"
 
+    // 2.5) PB post-trigger continuation stall tightening
+    if (not doExit) and pbPostTriggerTighten
+        doExit := true
+        exitReason := "PB_POST_TRIGGER_TS"
+        exitReg := "BULL"
+
+    // 2.6) PROFILE_BREAKDOWN_DRIFT ENA-like pre-BULL_INV harvest
+    if (not doExit) and pbPreInvDegradeNow
+        doExit := true
+        exitReason := "BULL_PB_PRE_INV_HARVEST"
+        exitReg := "BULL"
+
+    // 2.7) PROFILE_BREAKDOWN_DRIFT strict late PB runner containment
+    if (not doExit) and pbLateNoProofRunnerExit
+        doExit := true
+        exitReason := "BULL_PB_LATE_NO_PROOF_RUNNER"
+        exitReg := "BULL"
+
+    // 2.8) PROFILE_BREAKDOWN_DRIFT fresh PB runner containment
+    if (not doExit) and pbFreshNoProofRunnerExit
+        doExit := true
+        exitReason := "BULL_PB_FRESH_NO_PROOF_RUNNER"
+        exitReg := "BULL"
+
+    // 2.9) PROFILE_BREAKDOWN_DRIFT weak TP0 runner containment
+    if (not doExit) and pbWeakTP0QualityRunnerExit
+        doExit := true
+        exitReason := "BULL_PB_WEAK_TP0_RUNNER"
+        exitReg := "BULL"
+
+    // 2.9b) PROFILE_BREAKDOWN_DRIFT post-TP0 bar1 runner collapse
+    if (not doExit) and bullPBPostTP0ImmediateCollapse
+        doExit := true
+        exitReason := "BULL_PB_POST_TP0_COLLAPSE"
+        exitReg := "BULL"
+
+    // 2.10) PROFILE_BREAKDOWN_DRIFT immediate-TP0 MFE no-proof de-risk
+    if (not doExit) and pbImmediateMfeNoProofRunnerExit
+        doExit := true
+        exitReason := "BULL_PB_IMMEDIATE_MFE_NO_PROOF"
+        exitReg := "BULL"
+
+    // 2.11) PROFILE_BREAKDOWN_DRIFT PB runner non-proof / failed validation-high extension
+    if (not doExit) and (pbRunnerNoProofExit or (bdBullPB and bullTP0Done and not bullTP1Done and bullPBDelayedProofValidated and not na(bullTP0Bar) and not na(bullTP0BarLow) and not na(L1_entryBar) and bullTP0Bar<=L1_entryBar+1 and bar_index>=bullTP0Bar+20 and strategy.openprofit<-1.25 and close<bullTP0BarLow and not bullCloseInvalid))
+        doExit := true
+        exitReason := "BULL_PB_RUNNER_NO_PROOF"
+        exitReg := "BULL"
+
+    if not doExit and bdBullInvEarlyDeath
+        doExit := true
+        exitReason := "BULL_INV_EARLY_DEATH"
+
+    if not doExit and pbEPF
+        doExit := true
+        exitReason := "BULL_PB_EPF"
+        exitReg := "BULL"
+
+    bool pbSpsProbe = pbSpsArmed and inPos and isLong and posTag=="BULL" and L1_entryEngine=="BULL_PB" and not bullTP0Done and (bar_index - pbSpsBar >= 8)
+    bool pbSpsDeadScore = (((pbSpsHH >= 2 ? 2 : pbSpsHH) + (pbSpsMinLo >= pbSpsStopLo ? 1 : 0)) <= 1)
+    bool pbSpsProtected = pbSpsRec >= 2 and pbSpsHH >= 1
+    bool pbSpsExit = pbSpsProbe and pbSpsDeadScore and not pbSpsProtected
+
+    if not doExit and pbSpsExit
+        doExit := true
+        exitReason := "BULL_PB_SPS_DEAD"
+        exitReg := "BULL"
+
     // 3) Bull invalidation (fallback)
-    if (not doExit) and bullCloseInvalid
+    // v8.54 patch test:
+    // allow raw BULL_INV only when it is NOT a valid Breakdown Drift compression hold.
+    if (not doExit) and bullCloseInvalidExit
         doExit := true
         exitReason := "BULL_INV"
         exitReg := "BULL"
 
     // 3) Short invalidations
     // 3a) BEAR trail exit (post-TP1 trail reclaim)
-    if (not doExit) and bearInvPostTrail 
-        doExit := true 
-        exitReason := "BEAR_TRAIL" 
+    if (not doExit) and bearInvPostTrail
+        doExit := true
+        exitReason := "BEAR_TRAIL"
         exitReg := "BEAR"
-    // 3a.5) BEAR post-TP0 no-extension exit (remainder proof failed)
-    if (not doExit) and bearTP0NoExtExit 
-        doExit := true 
-        exitReason := "BEAR_TP0_NOEXT" 
+
+    // 3a.5) BEAR post-TP0 remainder tightening (post-proof giveback containment)
+    if (not doExit) and bearTP0NoExtExit
+        doExit := true
+        exitReason := "BEAR_REMAINDER_TIGHTEN"
         exitReg := "BEAR"
+
+    // 3a.75) BEAR pre-TP0 stale / non-performance exit
+    if (not doExit) and bearPreTP0StaleExit
+        doExit := true
+        exitReason := "BEAR_PRETP0_STALE"
+        exitReg := "BEAR"
+
+    // 3a.80) PROFILE_BREAKDOWN_DRIFT toxic subtype containment
+    if (not doExit) and bearDriftNonProofReclaimExit
+        doExit := true
+        exitReason := "BEAR_DRIFT_NONPROOF_RECLAIM"
+        exitReg := "BEAR"
+
+    // 3a.85) BEAR progressive time-stop (early TS)
+    if (not doExit) and bearTS_ProgExit
+        doExit := true
+        exitReason := "BEAR_TS_PROG"
+        exitReg := "BEAR"
+
     // 3b) Other BEAR invalidations
-    if (not doExit) and bearShortInvalid 
-        doExit := true 
-        exitReason := "BEAR_INV" 
+    if (not doExit) and bearShortInvalid
+        doExit := true
+        exitReason := "BEAR_INV"
         exitReg := "BEAR"
 
     if (not doExit) and rbShortInvalid
@@ -4404,12 +5619,6 @@ if exitOk and inPos
         doExit := true
         exitReason := "BEAR_EXPIRE_FORCE"
         exitReg := "BEAR"
-
-    // 7) Time-stops (must pay quickly)
-    if (not doExit) and pbTimeStop
-        doExit := true
-        exitReason := "BULL_PB_TS"
-        exitReg := "BULL"
 
     if (not doExit) and bullTimeStop
         doExit := true
@@ -4438,7 +5647,6 @@ if exportToLogs and doExit
     L1_exitReason  := exitReason
     L1_regExit     := exitReg
 
-
 // --- Execute full closes (no close_all) ---
 if doExit
     if isLong
@@ -4449,11 +5657,178 @@ if doExit
     // defer state resets until flat
     pendingReset := true
 
+lc_emitRowLive(
+    _rowType,
+    _tradeId,
+    _entryBarIndex,
+    _entryTimeMs,
+    _pendingExitReason,
+    _doExit
+) =>
+    lc_emitRow(
+        _rowType,
+        _tradeId,
+        _entryBarIndex,
+        _entryTimeMs,
+        _pendingExitReason,
+        _doExit,
+        bullTP0Hit,
+        bullTP1Hit,
+        bearTP0Hit,
+        bearTP1Hit,
+        bullPBDelayedProofPending,
+        bullPBDelayedProofValidated,
+        pbRunnerNoProofExit,
+        pbPreInvDegradeNow,
+        pbPostTriggerTighten,
+        pd_holdBarsIn,
+        pd_noNewHighStreak,
+        pbPreInvArmed,
+        pbPreInvNoNewHiStreak,
+        pbPreInvRejectCount,
+        pbPreInvStallCount,
+        bearBD_ReclaimExitNow,
+        bearACC_ReclaimExitNow,
+        bearExitNow,
+        bullMomLoss,
+        bullCloseInvalid,
+        bearInvPostTrail,
+        bearTP0NoExtExit,
+        bearShortInvalid,
+        rbShortInvalid,
+        raStopHit,
+        raTPHit,
+        bearForceCloseShort,
+        pbTimeStop,
+        bullTimeStop,
+        raTimeStop,
+        bearTimeStop,
+        rbShortTimeStop
+    )
+
+lc_processLifecycle(_enabled, _tradeLogActive, _activeTradeId, _entryBarIndex, _entryTimeMs, _pendingExitReason) =>
+    bool   tradeLogActive   = _tradeLogActive
+    int    activeTradeId    = _activeTradeId
+    int    entryBarIndex    = _entryBarIndex
+    int    entryTimeMs      = _entryTimeMs
+    string pendingExitReason = _pendingExitReason
+
+    if not _enabled
+        [tradeLogActive, activeTradeId, entryBarIndex, entryTimeMs, pendingExitReason]
+
+    bool reclaimExitNow = exitOk and (bearBD_ReclaimExitNow or bearACC_ReclaimExitNow)
+    bool hasExitTriggerThisBar = reclaimExitNow or doExit
+
+    if barstate.isconfirmed and posOpened
+        activeTradeId := L1_tradeId
+        entryBarIndex := bar_index
+        entryTimeMs := time
+        pendingExitReason := ""
+        tradeLogActive := true
+
+    if barstate.isconfirmed and tradeLogActive and inPos
+        if reclaimExitNow
+            pendingExitReason := "BEAR_RECLAIM_EXIT"
+            lc_emitRowLive(
+                "LC_EXIT_TRIGGER",
+                activeTradeId,
+                entryBarIndex,
+                entryTimeMs,
+                pendingExitReason,
+                true
+            )
+        else if doExit
+            pendingExitReason := exitReason
+            lc_emitRowLive(
+                "LC_EXIT_TRIGGER",
+                activeTradeId,
+                entryBarIndex,
+                entryTimeMs,
+                pendingExitReason,
+                true
+            )
+        else if not hasExitTriggerThisBar
+            lc_emitRowLive(
+                "LC_BAR",
+                activeTradeId,
+                entryBarIndex,
+                entryTimeMs,
+                pendingExitReason,
+                false
+            )
+
+    if barstate.isconfirmed and tradeLogActive and posClosed
+        lc_emitRow(
+            "LC_CLOSE",
+            activeTradeId,
+            entryBarIndex,
+            entryTimeMs,
+            pendingExitReason,
+            true,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            0,
+            0,
+            false,
+            0,
+            0,
+            0,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false
+        )
+        tradeLogActive := false
+        activeTradeId := na
+        entryBarIndex := na
+        entryTimeMs := na
+        pendingExitReason := ""
+
+    [tradeLogActive, activeTradeId, entryBarIndex, entryTimeMs, pendingExitReason]
+
+//====================================================
+// Lifecycle processing (must run before flat reset)
+//====================================================
+[_lc_active_new, _lc_id_new, _lc_entryBar_new, _lc_entryTs_new, _lc_exit_new] = lc_processLifecycle(
+    exportLifecycle,
+    LC_tradeLogActive,
+    LC_activeTradeId,
+    LC_entryBarIndex,
+    LC_entryTimeMs,
+    LC_pendingExitReason
+)
+
+LC_tradeLogActive    := _lc_active_new
+LC_activeTradeId     := _lc_id_new
+LC_entryBarIndex     := _lc_entryBar_new
+LC_entryTimeMs       := _lc_entryTs_new
+LC_pendingExitReason := _lc_exit_new
 
 //====================================================
 // L2 EXIT window log (same mechanics as ENTRY/CAND)
 //====================================================
 if exportL2 and barstate.isconfirmed and doExit
+
     string _evtType = "EXIT_" + logModeNow()
     int _mask = 0
     bool _isEntry = false
@@ -4485,9 +5860,6 @@ if exportL2 and barstate.isconfirmed and doExit
                 int idx = curIdx - i
                 l2_emitRow(idx, -i, false, false, "", false, 0)
 
-
-
-
 // Apply deferred resets once we are actually flat
 if pendingReset and (not inPos)
     pendingReset := false
@@ -4498,6 +5870,14 @@ if pendingReset and (not inPos)
     lastEntryBar := na
     tradeHi := na
     tradeLo := na
+    pbSpsArmed := false
+    pbSpsBar := na
+    pbSpsBestHi := na
+    pbSpsStopLo := na
+    pbSpsMinLo := na
+    pbSpsStopClose := na
+    pbSpsHH := 0
+    pbSpsRec := 0
 
     raTPMid     := na
     raStopBase  := na
@@ -4514,400 +5894,48 @@ if pendingReset and (not inPos)
     bullLastAddBar := na
     bullImpulseDone := false
     bullAddRefHi := na
+
+    // ---- PROFILE_BREAKDOWN_DRIFT ENA-like PB pre-BULL_INV harvest reset ----
+    pbPreInvTrackActive   := false
+    pbPreInvEligible      := false
+    pbPreInvArmed         := false
+    pbPreInvEligBar       := na
+    pbPreInvBarsAfterElig := 0
+    pbPreInvStartHigh     := na
+    pbPreInvHighAfterElig := na
+    pbPreInvLowAfterElig  := na
+    pbPreInvNoNewHiStreak := 0
+    pbPreInvStallCount    := 0
+    pbPreInvRejectCount   := 0
+
+    // ---- PROFILE_BREAKDOWN_DRIFT Wave 1 reset ----
+    pd_holdContActive       := false
+    pd_holdEntryBar         := na
+    pd_holdBarsIn           := 0
+    pd_lastContHigh         := na
+    pd_lastContHighBar      := na
+    pd_barsSinceContHigh    := na
+    pd_pullbackLowSinceHigh := na
+    pd_pullbackDepthATR     := na
+    pd_noNewHighStreak      := 0
+    pd_recentExpansionAlive := false
+    bullInvPostTP0Streak := 0
     
     bearPBSeen := false
     bearPBBar  := na
     bearForceCloseShort := false
+    bearOpenProfitMax := na
 
     rbSPBSeen := false
     rbSPBBar  := na
     rbSValue  := na
     // L1 monetization flags reset per full trade
+    L1_tp0Hit := false
+    L1_tp0Bar := na
     L1_tp1Hit := false
-    L1_trailEver := false
+    L1_tp1Bar := na
 
-//====================================================
-// ADX split verification — event counters (NO candle spam)
-//====================================================
-var int c_setupNoADX = 0
-var int c_setupWithADX = 0
-var int c_reclaim = 0
-var int c_blockedExecADX = 0
-var int c_blockedRegimeADX = 0
-var int c_reclaim_withADX = 0
-var int c_reclaim_noADX   = 0
-
-
-
-//====================================================
-// Range-A diagnostics — event counters (NO candle spam)
-//====================================================
-var int c_raContext = 0
-var int c_raDiscNow = 0
-var int c_raDiscRecent = 0
-var int c_raSnapReady = 0
-var int c_raReclaimOk = 0
-var int c_raEntryOk = 0
-var int c_raWasBelow = 0
-var int c_raAccept2Cl = 0
-var int c_raAccept1Cl = 0
-var int c_raWasBelow_inRA  = 0
-var int c_raAccept2Cl_inRA = 0
-
-
-
-// Block reasons (mutually non-exclusive counters)
-var int c_raBlock_htfOn = 0
-var int c_raBlock_bearAcc  = 0
-var int c_raBlock_bearPend = 0
-var int c_raBlock_bearLockout = 0
-var int c_raBlock_notBalance = 0
-var int c_raBlock_notDiscRecent = 0
-var int c_raBlock_notReclaim = 0
-var int c_raBlock_rsi = 0
-var int c_raBlock_struct = 0
-var int c_raBlock_adx = 0
-var int c_raBlock_rsiOnly = 0
-var int c_raBlock_adxOnly = 0
-var int c_raBlock_rsiAndAdx = 0
-var int c_raBlock_risk = 0
-var int c_raBlock_rr   = 0
-var int c_raBlock_farFromLow = 0
-var int c_raBlock_belowMid = 0
-
-
-
-bullTruthLive_flat = (not inPos) and (pendingBull or bullArmed or bullPBSeen)
-
-// “Would be Bull mode if ADX regime didn’t exist”
-setupNoADX   = bullTruthLive_flat and htfTrendOk
-setupWithADX = bullTruthLive_flat and htfTrendOk and adxBullRegimeOk
-
-// “We got a valid reclaim signal”
-reclaimSig = (not inPos) and bullReclaimNow
-reclaimWithADX = reclaimSig and adxBullRegimeOk
-reclaimNoADX   = reclaimSig and (not adxBullRegimeOk)
-
-
-// “Would enter, but Exec ADX blocks it”
-enterWould = (not inPos) and (mode == Mode.Bull) and bullReclaimNow and htfTrendOk
-blockedByExecADX = enterWould and (not adxBullExecOk)
-// “We had a reclaim signal + HTF ON, but Bull mode was NOT selected because regime ADX gate failed”
-blockedByRegimeADX = (not inPos) and reclaimSig and htfTrendOk and (not adxBullRegimeOk)
-raWorld = (not inPos) and (mode == Mode.RangeA)
-
-
-// Count only on confirmed bars
-if barstate.isconfirmed
-    if setupNoADX
-        c_setupNoADX += 1
-    if setupWithADX
-        c_setupWithADX += 1
-    if reclaimSig
-        c_reclaim += 1
-    if blockedByExecADX
-        c_blockedExecADX += 1
-    if reclaimWithADX
-        c_reclaim_withADX += 1
-    if reclaimNoADX
-        c_reclaim_noADX += 1
-    if blockedByRegimeADX
-        c_blockedRegimeADX += 1
-    // Global (flat)
-    if (not inPos) and raWasBelow
-        c_raWasBelow += 1
-    if (not inPos) and raAccept2Cl
-        c_raAccept2Cl += 1
-    if (not inPos) and raAccept1Cl
-        c_raAccept1Cl += 1
-
-    if bullTrailArmed
-        c_bullTrailArmed += 1
-
-    // In RangeA world (router-selected)
-    if raWorld and raWasBelow
-        c_raWasBelow_inRA += 1
-    if raWorld and raAccept2Cl
-        c_raAccept2Cl_inRA += 1
-
-//====================================================
-// ADD fill detection (confirmed only, counts ONLY true adds)
-//====================================================
-if barstate.isconfirmed
-    float posNow  = strategy.position_size
-    float posPrev = nz(prevPosSize, 0)
-
-    bool isAddFill = (posPrev > 0) and (posNow > posPrev)
-
-    if isAddFill
-        c_addFill += 1
-        if posTag == "BULL"
-            // lock new add reference at the current high-water mark
-            bullAddRefHi := tradeHi
-
-    prevPosSize := posNow
-
-
-//====================================================
-// Range-A diagnostics counting (CONFIRMED bars only) — SCOPED TO ENTRY-DECISION
-//====================================================
-
-// 2) The decision point: reclaim is ready and we'd consider executing,
-//    but we haven't applied the last vetoes yet.
-raDecisionNotBalance = raDecision and (not raInBalance)
-
-// --- RA milestone flags for HUD counters ---
-raMil_discRecent = (not inPos) and raDiscRecent
-raMil_snapReady  = (not inPos) and raSnapReady
-
-// --- RA block reasons in "RA world" (why RA isn't progressing) ---
-raBlock_notBalance     = raWorld and (not (raInBalance or raBalSnapOk))
-raBlock_notDiscRecent  = raWorld and (not raDiscRecent)
-raBlock_notReclaim     = raWorld and raDiscRecent and (not raReclaimExecOk)
-
-
-// 3) Decompose ONLY the vetoes that can still kill the trade at raDecision
-raVeto_htfOn        = raDecision and (not htfOffForRA)
-raVeto_bearAccepted = raDecision and raWorld and bearActive
-raVeto_bearPending  = raDecision and raWorld and pendingBear
-raVeto_bearLockout  = raDecision and (not bearLockoutOk)
-raVeto_rsi         = raDecision and (not raRsiOk)
-raVeto_struct      = raDecision and (not raStructSnapOk)
-raVeto_adx         = raDecision and (not adxRAOk)
-raVeto_farFromLow = raDecision and raUseNearLow and (not raNearLowOk)
-raVeto_belowMid = raDecision and raRequireBelowMid and (not raBelowMidOk)
-raVeto_risk = raDecision and raEntryOkRaw and (not raRiskOk)
-raVeto_rr = raDecision and raEntryOkRaw and raRiskOk and (not raRROkHard)
-raVeto_rsiOnly   = raDecision and (not raRsiOk) and adxRAOk
-raVeto_adxOnly   = raDecision and raRsiOk and (not adxRAOk)
-raVeto_rsiAndAdx = raDecision and (not raRsiOk) and (not adxRAOk)
-
-
-// 4) "Would enter if mode allowed" check
-raWouldEnter = raDecision and htfOffForRA and bearLockoutOk and
-     (raInBalance or raBalSnapOk) and raRsiOk and raStructSnapOk and adxRAOk
-
-// 5) Actual strategy enter condition (must match the script)
-raExecEnter = (not inPos) and (mode == Mode.RangeA) and raEntryOk
-
-if barstate.isconfirmed
-    // World + key milestones
-    if raWorld
-        c_raContext += 1
-    if (not inPos) and raDiscNow
-        c_raDiscNow += 1
-    if raMil_discRecent
-        c_raDiscRecent += 1
-    if raMil_snapReady
-        c_raSnapReady += 1
-
-    if raBlock_notBalance
-        c_raBlock_notBalance += 1
-    if raBlock_notDiscRecent
-        c_raBlock_notDiscRecent += 1
-    if raBlock_notReclaim
-        c_raBlock_notReclaim += 1
-
-    if raDecision
-        c_raReclaimOk += 1  // reusing this counter as "decision events" is fine OR rename it
-
-    // Actual enters
-    if raExecEnter
-        c_raEntryOk += 1
-
-    // Veto reasons ONLY at decision point
-    if raVeto_htfOn
-        c_raBlock_htfOn += 1
-    //if raVeto_bearActive
-    //    c_raBlock_bearActive += 1
-    if raVeto_bearLockout
-        c_raBlock_bearLockout += 1
-    if raVeto_rsi
-        c_raBlock_rsi += 1
-    if raVeto_struct
-        c_raBlock_struct += 1
-    if raVeto_adx
-        c_raBlock_adx += 1
-    if raVeto_farFromLow
-        c_raBlock_farFromLow += 1
-    if raVeto_belowMid
-        c_raBlock_belowMid += 1
-    if raVeto_risk
-        c_raBlock_risk += 1
-    if raVeto_rr
-        c_raBlock_rr += 1
-    if raVeto_rsiOnly
-        c_raBlock_rsiOnly += 1
-    if raVeto_adxOnly
-        c_raBlock_adxOnly += 1
-    if raVeto_rsiAndAdx
-        c_raBlock_rsiAndAdx += 1
-    if raVeto_bearAccepted
-        c_raBlock_bearAcc += 1
-    if raVeto_bearPending
-        c_raBlock_bearPend += 1
-
-
-var int entryScore = na
-
-if entered
-    if entryMode == Mode.Bull
-        entryScore := scoreBull()
-    else if entryMode == Mode.RangeA
-        entryScore := scoreRA()
-    else
-        entryScore := na
-
-//====================================================
-// Outcome logging (arrays + table)
-//====================================================
-var array<string> logMode   = array.new_string()
-var array<int>    logScore  = array.new_int()
-var array<string> logExit   = array.new_string()
-var array<int>    logOut    = array.new_int()
-
-logTrade(_mode, _score, _exitReason, _outcome) =>
-    array.push(logMode, _mode)
-    array.push(logScore, _score)
-    array.push(logExit, _exitReason)
-    array.push(logOut, _outcome)
-    // keep last 20
-    if array.size(logMode) > 20
-        array.shift(logMode), array.shift(logScore), array.shift(logExit), array.shift(logOut)
-
-
-//====================================================
-// Diagnostics HUD (bottom-right) — clean, readable numbers
-//====================================================
-var table hud = table.new(position.bottom_right, 2, 25)
-var int hudLastBar = na
-
-
-doHUD = showDiagHUD and barstate.isconfirmed and (na(hudLastBar) or bar_index != hudLastBar)
-if doHUD
-    hudLastBar := bar_index
-    table.clear(hud, 0, 0, 1, 24)
-
-    // Title
-    table.cell(hud, 0, 0, "ADX Split HUD", text_color=color.white, bgcolor=color.new(color.black, 0))
-    table.cell(hud, 1, 0, "", text_color=color.white, bgcolor=color.new(color.black, 0))
-
-    // Rows (COMPACT)
-
-    // --- BULL (signal -> entry pressure) ---
-    table.cell(hud, 0, 1, "Bull reclaim signals", text_color=color.black)
-    table.cell(hud, 1, 1, str.tostring(c_reclaim), text_color=color.black)
-
-    table.cell(hud, 0, 2, "Blocked by Exec ADX", text_color=color.black)
-    table.cell(hud, 1, 2, str.tostring(c_blockedExecADX), text_color=color.black)
-
-    table.cell(hud, 0, 3, "Blocked by Regime ADX", text_color=color.black)
-    table.cell(hud, 1, 3, str.tostring(c_blockedRegimeADX), text_color=color.black)
-
-    table.cell(hud, 0, 4, "Bull START signals", text_color=color.black)
-    table.cell(hud, 1, 4, str.tostring(c_bullStartFinal), text_color=color.black)
-
-    table.cell(hud, 0, 5, "START gate: window", text_color=color.black)
-    table.cell(hud, 1, 5, str.tostring(c_bullStartWin), text_color=color.black)
-
-    table.cell(hud, 0, 6, "START gate: strong", text_color=color.black)
-    table.cell(hud, 1, 6, str.tostring(c_bullStartStrong), text_color=color.black)
-
-    table.cell(hud, 0, 7, "START gate: not ext", text_color=color.black)
-    table.cell(hud, 1, 7, str.tostring(c_bullStartExt), text_color=color.black)
-
-    table.cell(hud, 0, 8, "START gate: ADX ok", text_color=color.black)
-    table.cell(hud, 1, 8, str.tostring(c_bullStartADX), text_color=color.black)
-
-    table.cell(hud, 0, 9, "START gate: no-chase", text_color=color.black)
-    table.cell(hud, 1, 9, str.tostring(c_bullStartNoChase), text_color=color.black)
-
-    table.cell(hud, 0, 10, "START gate: microPB", text_color=color.black)
-    table.cell(hud, 1, 10, str.tostring(c_bullStartMicroPB), text_color=color.black)
-
-    table.cell(hud, 0, 11, "Bull COMP signals", text_color=color.black)
-    table.cell(hud, 1, 11, str.tostring(c_bullCompSig), text_color=color.black)
-
-    table.cell(hud, 0, 12, "Bull trail EXIT count", text_color=color.black)
-    table.cell(hud, 1, 12, str.tostring(c_bullTrailExit), text_color=color.black)
-
-    // --- ADD (pyramiding actually working?) ---
-    table.cell(hud, 0, 13, "ADD PB / Reclaim / Enter", text_color=color.black)
-    table.cell(hud, 1, 13, str.tostring(c_addPB) + " / " + str.tostring(c_addReclaim) + " / " + str.tostring(c_addSig), text_color=color.black)
-
-    table.cell(hud, 0, 14, "ADD blocks TP1/ADX/SLOPE/EXT/SPC", text_color=color.black)
-    table.cell(hud, 1, 14,
-        str.tostring(c_addBlkTP1) + " / " +
-        str.tostring(c_addBlkADX) + " / " +
-        str.tostring(c_addBlkSlope) + " / " +
-        str.tostring(c_addBlkExt) + " / " +
-        str.tostring(c_addBlkSpc),
-        text_color=color.black)
-
-    table.cell(hud, 0, 15, "ADD blocks NH/HTF/Slow/Trail", text_color=color.black)
-    table.cell(hud, 1, 15,
-        str.tostring(c_addBlkNH) + " / " +
-        str.tostring(c_addBlkHTF) + " / " +
-        str.tostring(c_addBlkSlow) + " / " +
-        str.tostring(c_addBlkTrail),
-        text_color=color.black)
-
-    table.cell(hud, 0, 16, "ADD fills / TP1 hits", text_color=color.black)
-    table.cell(hud, 1, 16, str.tostring(c_addFill) + " / " + str.tostring(c_tp1Hits), text_color=color.black)
-
-
-    // --- RANGE-A (conversion bottleneck only) ---
-    table.cell(hud, 0, 17, "RA decision events", text_color=color.black)
-    table.cell(hud, 1, 17, str.tostring(c_raReclaimOk), text_color=color.black)
-
-    table.cell(hud, 0, 18, "RA entry OK", text_color=color.black)
-    table.cell(hud, 1, 18, str.tostring(c_raEntryOk), text_color=color.black)
-
-    table.cell(hud, 0, 19, "RA blocks: not reclaim", text_color=color.black)
-    table.cell(hud, 1, 19, str.tostring(c_raBlock_notReclaim), text_color=color.black)
-
-    table.cell(hud, 0, 20, "RA blocks: HTF/Bear/Lock", text_color=color.black)
-    table.cell(hud, 1, 20,
-        str.tostring(c_raBlock_htfOn) + " / " +
-        str.tostring(c_raBlock_bearAcc) + " / " +
-        str.tostring(c_raBlock_bearLockout),
-        text_color=color.black)
-
-    // --- BEAR SHORT (main trade engine now) ---
-    table.cell(hud, 0, 21, "BEAR PB seen", text_color=color.black)
-    table.cell(hud, 1, 21, str.tostring(c_bearPBSeen), text_color=color.black)
-
-    table.cell(hud, 0, 22, "BEAR breakdown signals", text_color=color.black)
-    table.cell(hud, 1, 22, str.tostring(c_bearBreakSig), text_color=color.black)
-
-    table.cell(hud, 0, 23, "BEAR DBG breakdown signals", text_color=color.black)
-    table.cell(hud, 1, 23, str.tostring(c_dbgBreakSig), text_color=color.black)
-
-    table.cell(hud, 0, 24, "BEAR reentry OK bars", text_color=color.black)
-    table.cell(hud, 1, 24, str.tostring(c_bearReentryOk), text_color=color.black)
-
-
-//====================================================
-// Exit execution (priority: Bear kill > Bull invalid > Stops > TPs > Time-stops)
-//====================================================
-var bool xBear = false
-var bool xBullInv = false
-var bool xRaStop = false
-var bool xBullTp = false
-var bool xRaTp = false
-var bool xBullTs = false
-var bool xRaTs = false
-
-// Reset exit markers each bar (otherwise they stick forever)
-xBear    := false
-xBullInv := false
-xRaStop  := false
-xBullTp  := false
-xRaTp    := false
-xBullTs  := false
-xRaTs    := false
-
-if exitOk and inPos
+if (not doExit) and exitOk and inPos
 
     // 0) HTF flip kill-switch (SHORTS) — do not hold shorts into HTF bull
     shortHTFKill = inPos and isShort and htfTrendOk and (not htfNeutral)
@@ -4973,8 +6001,6 @@ if exitOk and inPos
         L1_exitOutcome := tmpExitOutcome
         L1_regExit     := tmpRegExit
 
-        logTrade(logModeNow(), entryScore, "BEAR_BD_TIMEOUT", 0)
-
         lastBearShortExitBar := bar_index
         pendingReset := true
         forcedMode := Mode.Wait
@@ -4988,8 +6014,6 @@ if exitOk and inPos
         L1_exitReason  := tmpExitReason
         L1_exitOutcome := tmpExitOutcome
         L1_regExit     := tmpRegExit
-
-        logTrade(logModeNow(), entryScore, "BEAR_BD_FAIL", 0)
 
         lastBearShortExitBar := bar_index
         pendingReset := true
@@ -5006,8 +6030,6 @@ if exitOk and inPos
         L1_exitReason  := tmpExitReason
         L1_exitOutcome := tmpExitOutcome
         L1_regExit     := tmpRegExit
-
-        logTrade(logModeNow(), entryScore, "BEAR_RECLAIM_EXIT", 0)
 
         lastBearShortExitBar := bar_index
         pendingReset := true
@@ -5042,9 +6064,6 @@ if exitOk and inPos
         L1_exitOutcome := tmpExitOutcome
         L1_regExit     := tmpRegExit
 
-        logTrade(logModeNow(), entryScore, "HTF-BULL-KILL", 0)
-
-
         lastBearShortExitBar := bar_index  // helps throttle BEAR re-entry after forced kill
         lastRBShortExitBar := bar_index
         pendingReset := true
@@ -5053,7 +6072,6 @@ if exitOk and inPos
 
     // 1) Bear kill-switch (LONGS only)
     if bearExitNow and (posTag != "BEAR")
-        xBear := true
         if posTag == "BULL" and not na(bullLevel)
             bullEndBar := bar_index
             bullEndY   := high + lblPadUp
@@ -5069,10 +6087,7 @@ if exitOk and inPos
         L1_exitReason  := tmpExitReason
         L1_exitOutcome := tmpExitOutcome
         L1_regExit     := tmpRegExit
-
-        // Outcome: 0 (emergency)
-        logTrade(logModeNow(), entryScore, "BEAR-EXIT", 0)
-        
+   
        // --- RESET AFTER FLAT ---
         pendingReset := true
 
@@ -5091,8 +6106,6 @@ if exitOk and inPos
         L1_exitReason  := tmpExitReason
         L1_exitOutcome := tmpExitOutcome
         L1_regExit     := tmpRegExit
-
-        logTrade(logModeNow(), entryScore, "BEAR-INVALID", 0)
         
         lastBearShortExitBar := bar_index
         pendingReset := true
@@ -5111,8 +6124,6 @@ if exitOk and inPos
         L1_exitReason  := tmpExitReason
         L1_exitOutcome := tmpExitOutcome
         L1_regExit     := tmpRegExit
-
-        logTrade(logModeNow(), entryScore, "BEAR-EXP", 0)
         
         pendingReset := true
         forcedMode := Mode.RangeB
@@ -5130,26 +6141,14 @@ if exitOk and inPos
         L1_exitReason  := tmpExitReason
         L1_exitOutcome := tmpExitOutcome
         L1_regExit     := tmpRegExit
-
-        logTrade(logModeNow(), entryScore, "RB-S-INVALID", 0)
         
         lastRBShortExitBar := bar_index
         pendingReset := true
         forcedMode := Mode.RangeB
         forcedUntilBar := bar_index + downgradeBars
 
-    // 1.5) Bull TP1 (partial) — do NOT end trade
-    //else if bullTP1Hit
-    //    strategy.close("LONG", qty_percent=bullTP1_Pct, comment="BULL-TP1")
-    //    bullTP1Done := true
-    //    c_tp1Hits += 1
-
     // 2) Bull invalidation
-    else if bullCloseInvalid and (not bullTP1Hit)
-        xBullInv := true
-        if bullPostTrailInvalid
-            c_bullTrailExit += 1
-
+    else if bullCloseInvalidExit and (not bullTP1Hit)
         // ---- END BULL (in-position invalidation) ----
         if not na(bullLevel)
             bullEndBar := bar_index
@@ -5166,23 +6165,16 @@ if exitOk and inPos
         L1_exitReason  := tmpExitReason
         L1_exitOutcome := tmpExitOutcome
         L1_regExit     := tmpRegExit
-
-        logTrade(logModeNow(), entryScore, "BULL-INVALID", 0)
         
-        // --- RESET AFTER FLAT ---
         pendingReset := true
-
         // Downgrade Bull->RangeB
         forcedMode := Mode.RangeB
         forcedUntilBar := bar_index + downgradeBars
 
     // 3) Range-A stop
     else if raStopHit
-        xRaStop := true
-        //strategy.close("LONG", comment="RA-STOP")
-        //strategy.close("LONG_ADD", comment="RA-STOP")  // same comment for that block
         closeLongAll("RA-STOP")    
-    // temp tuple unpack
+        // temp tuple unpack
         [tmpExitPending, tmpExitReason, tmpExitOutcome, tmpRegExit] = L1_markExit("RA-STOP", 0, logModeNow())
 
         // commit to globals
@@ -5190,8 +6182,6 @@ if exitOk and inPos
         L1_exitReason  := tmpExitReason
         L1_exitOutcome := tmpExitOutcome
         L1_regExit     := tmpRegExit
-
-        logTrade(logModeNow(), entryScore, "RA-STOP", 0)
         
         // --- RESET AFTER FLAT ---
         pendingReset := true
@@ -5203,9 +6193,6 @@ if exitOk and inPos
 
     // 5) RA TP
     else if raTPHit
-        xRaTp := true
-        //strategy.close("LONG", comment="RA-TP")
-        //strategy.close("LONG_ADD", comment="RA-TP")
         closeLongAll("RA-TP")
         // temp tuple unpack
         [tmpExitPending, tmpExitReason, tmpExitOutcome, tmpRegExit] = L1_markExit("RA-TP", 0, logModeNow())
@@ -5215,8 +6202,6 @@ if exitOk and inPos
         L1_exitReason  := tmpExitReason
         L1_exitOutcome := tmpExitOutcome
         L1_regExit     := tmpRegExit
-
-        logTrade(logModeNow(), entryScore, "RA-TP", 1)
         
         // --- RESET AFTER FLAT ---
         pendingReset := true
@@ -5233,8 +6218,6 @@ if exitOk and inPos
         L1_exitReason  := tmpExitReason
         L1_exitOutcome := tmpExitOutcome
         L1_regExit     := tmpRegExit
-
-        logTrade(logModeNow(), entryScore, "BEAR-TS", 0)
         
         lastBearShortExitBar := bar_index
         pendingReset := true
@@ -5252,8 +6235,6 @@ if exitOk and inPos
         L1_exitReason  := tmpExitReason
         L1_exitOutcome := tmpExitOutcome
         L1_regExit     := tmpRegExit
-
-        logTrade(logModeNow(), entryScore, "RB-S-TS", 0)
        
         lastRBShortExitBar := bar_index
         pendingReset := true
@@ -5263,13 +6244,10 @@ if exitOk and inPos
 
     // 6) Bull time-stop
     else if bullTimeStop
-        xBullTs := true
         if not na(bullLevel)
             bullEndBar := bar_index
             bullEndY   := high + lblPadUp
 
-        //strategy.close("LONG", comment="BULL-TS")
-        //strategy.close("LONG_ADD", comment="BULL-TS")
         closeLongAll("BULL-TS")
         // temp tuple unpack
         [tmpExitPending, tmpExitReason, tmpExitOutcome, tmpRegExit] = L1_markExit("BULL-TS", 0, logModeNow())
@@ -5279,8 +6257,6 @@ if exitOk and inPos
         L1_exitReason  := tmpExitReason
         L1_exitOutcome := tmpExitOutcome
         L1_regExit     := tmpRegExit
-
-        logTrade(logModeNow(), entryScore, "BULL-TS", 0)
        
         // --- RESET AFTER FLAT ---
         pendingReset := true
@@ -5290,9 +6266,6 @@ if exitOk and inPos
 
     // 7) RA time-stop
     else if raTimeStop
-        xRaTs := true
-        //strategy.close("LONG", comment="RA-TS")
-        //strategy.close("LONG_ADD", comment="RA-TS")
         closeLongAll("RA-TS")
         // temp tuple unpack
         [tmpExitPending, tmpExitReason, tmpExitOutcome, tmpRegExit] = L1_markExit("RA-TS", 0, logModeNow())
@@ -5302,8 +6275,6 @@ if exitOk and inPos
         L1_exitReason  := tmpExitReason
         L1_exitOutcome := tmpExitOutcome
         L1_regExit     := tmpRegExit
-
-        logTrade(logModeNow(), entryScore, "RA-TS", 0)
        
         // --- RESET AFTER FLAT ---
         pendingReset := true
@@ -5313,10 +6284,6 @@ if exitOk and inPos
 
 // Flat RB time-stop (transitional regime must resolve)
 if rbFlatTimeStop
-        // Strategy v1.0 compliance: RB is a no-trade regime manager.
-    // If RB fails to resolve within rbTS_Bars, log it as a regime failure (outcome=0).
-    logTrade("RANGE-B", scoreRB(), "RB-TS", 0)
-
     // RB -> RangeA downgrade
     rbAttempt := false
     rbAttemptDir := 0
@@ -5339,8 +6306,6 @@ if rbFlatTimeStop
     forcedMode := raForcedOk ? Mode.RangeA : Mode.Wait
     forcedUntilBar := bar_index + downgradeBars
 
-
-
 // RB resolution transitions
 if rbActive
     // Reversion back into old range => Range-A
@@ -5359,11 +6324,6 @@ if rbActive
         rbActive := false
         rbDir := 0
         rbStartBar := na
-        // Bear will arm/activate via bear logic on HTF OFF + acceptance; no manual flip here.
-
-//====================================================
-// Visuals — RAW regime states (trade-origin aware)
-//====================================================
 
 // Bear is always an overlay (pending/active), even during trades.
 bearVis = (pendingBear or bearActive)
@@ -5385,7 +6345,6 @@ raVis = (not inPos) ? ((not htfTrendOk) and raInBalance and (not bearActive)) : 
 // While in position, only show Bull if the position ORIGIN is BULL.
 bullTruthLive = (pendingBull or bullArmed or bullPBSeen)
 bullVis = (not inPos) ? (bullTruthLive and htfTrendOk) : originBull
-
 
 // Router-selected mode state (what you currently show)
 bearModeVis = bearVis  // overlay always wins visually
@@ -5414,25 +6373,6 @@ else
 
 // If you want to keep your old showModeBg toggle, repurpose it:
 bgcolor(showRegimeBg ? regimeBg : na)
-
-
-
-// ===== CHUNK 2 END =====
-
-
-// ===== CHUNK 3 START =====
-//====================================================
-// Regime flip labels (START / END)
-//====================================================
-
-// Use the same booleans you used for background shading.
-// If you implemented the shading patch I gave earlier, these exist:
-// useBear, useRB, useRA, useBull
-// If not, define them here based on router mode:
-// useBear := (pendingBear or bearActive)
-// useRB   := (rbAttempt or rbPending or rbActive)
-// useRA   := (mode == Mode.RangeA)
-// useBull := (mode == Mode.Bull)
 
 // ---- LABEL TRUTH (flat-only, not visual shading) ----
 lblBear = (not inPos) and (pendingBear or bearActive)
@@ -5525,7 +6465,6 @@ if bullEndNow
     )
 
 
-
 if doRegimeLabels and regimeFlip
     // END label for previous regime (skip if previous was WAIT)
     if regimeId[1] != 0 and regimeId[1] != 4 and regimeId[1] != 1
@@ -5574,7 +6513,7 @@ if doModeLbl
 //====================================================
 // L1 commit on actual position open (fill)
 //====================================================
-if exportToLogs and barstate.isconfirmed and posOpened
+if (exportToLogs or exportLifecycle) and barstate.isconfirmed and posOpened
     L1_tradeId += 1
 
     L1_coin     := syminfo.ticker
@@ -5583,14 +6522,10 @@ if exportToLogs and barstate.isconfirmed and posOpened
     L1_arch     := L1_pendArch
 
     L1_entryTime := time
-    L1_entryPx   := close
-    L1_entrySize := strategy.position_size
-    L1_entryEq   := strategy.equity
-    L1_entryNP   := strategy.netprofit
     L1_entryBar  := bar_index
 
-    // init max favorable / adverse
-    if strategy.position_size > 0
+    // init max favorable / adverse 
+    if posSize > 0
         L1_maxFavPx  := high
         L1_maxFavBar := bar_index
         L1_maxAdvPx  := low
@@ -5602,76 +6537,12 @@ if exportToLogs and barstate.isconfirmed and posOpened
         L1_maxAdvPx  := high
         L1_maxAdvBar := bar_index
 
-    // clear pending entry latch (so it can't leak)
+    // clear pending entry latch (so it can't leak) 
     L1_pendDir  := ""
     L1_pendReg  := ""
     L1_pendArch := ""
 
-
-plotshape(showExecMarks and posOpened, title="EXEC OPEN", text="OPEN", style=shape.labelup,
-     location=location.belowbar, size=size.tiny, color=color.new(color.lime, 0), textcolor=color.black)
-
-plotshape(showExecMarks and posClosed, title="EXEC CLOSE", text="CLOSE", style=shape.labeldown,
-     location=location.abovebar, size=size.tiny, color=color.new(color.red, 0), textcolor=color.white)
+plotshape(showExecMarks and posOpened, "EXEC OPEN", shape.labelup, location.belowbar, color.new(color.lime,0), text="OPEN", textcolor=color.black, size=size.tiny)
+plotshape(showExecMarks and posClosed, "EXEC CLOSE", shape.labeldown, location.abovebar, color.new(color.red,0), text="CLOSE", textcolor=color.white, size=size.tiny)
 
 
-
-    // Reset exit latch
-    //L1_exitPending := false
-    //L1_exitReason  := ""
-    //L1_exitOutcome := na
-    //L1_regExit     := ""
-
-//plotshape(showExecMarks and xBear,    title="X BEAR",    text="X-BEAR", style=shape.labeldown, location=location.abovebar, size=size.tiny)
-//plotshape(showExecMarks and xBullInv, title="X B-INV",   text="X-BINV", style=shape.labeldown, location=location.abovebar, size=size.tiny)
-//plotshape(showExecMarks and xRaStop,  title="X RA-STOP", text="X-RAST", style=shape.labeldown, location=location.abovebar, size=size.tiny)
-//plotshape(showExecMarks and xBullTp,  title="X B-TP",    text="X-BTP",  style=shape.labeldown, location=location.abovebar, size=size.tiny)
-//plotshape(showExecMarks and xRaTp,    title="X RA-TP",   text="X-RATP", style=shape.labeldown, location=location.abovebar, size=size.tiny)
-//plotshape(showExecMarks and xBullTs,  title="X B-TS",    text="X-BTS",  style=shape.labeldown, location=location.abovebar, size=size.tiny)
-//plotshape(showExecMarks and xRaTs,    title="X RA-TS",   text="X-RATS", style=shape.labeldown, location=location.abovebar, size=size.tiny)
-
-//plotshape(showExecMarks and bullEnter,   title="SIG BullEnter",   text="B",  style=shape.circle, location=location.belowbar, size=size.tiny)
-//plotshape(showExecMarks and rangeAEnter, title="SIG RangeAEnter", text="RA", style=shape.circle, location=location.belowbar, size=size.tiny)
-
-//plotshape(showRegimeMarks and (not inPos) and htfTrendOk and (pendingBull or bullArmed) and (not bullPBSeen), title="BULL attempt", text="BULL-ATT", style=shape.labelup, location=location.bottom, size=size.tiny)
-
-
-//plotchar(showDebugPlots ? raDiscNow   : false, title="DBG RA disc",    char="D", location=location.bottom)
-//plotchar(showDebugPlots ? raReclaimOk : false, title="DBG RA reclaim", char="R", location=location.bottom)
-//plotchar(showDebugPlots ? rbPending   : false, title="DBG RB pending", char="p", location=location.bottom)
-//plotchar(showDebugPlots ? rbActive    : false, title="DBG RB active",  char="B", location=location.bottom)
-//plotchar(showDebugPlots ? pendingBear : false, title="DBG BearPending", char="x", location=location.bottom)
-//plotchar(showDebugPlots ? bearActive  : false, title="DBG BearActive",  char="X", location=location.bottom)
-//plotchar(showDebugPlots ? bullArmed   : false, title="DBG BullArmed",  char="A", location=location.bottom)
-//plotchar(showDebugPlots ? bullPBSeen  : false, title="DBG BullPB",     char="P", location=location.bottom)
-
-//====================================================
-// Trade log table (last ~10 rows)
-//====================================================
-var table t = table.new(position.top_right, 4, 12)
-var int logLastBar = na
-
-
-bool doTableUpdate = showLogTable and barstate.isconfirmed and (na(logLastBar) or bar_index != logLastBar)
-if doTableUpdate
-    logLastBar := bar_index
-    table.clear(t, start_column=0, start_row=0, end_column=3, end_row=11)
-    table.cell(t, 0, 0, "Mode",  text_color=color.white, bgcolor=color.new(color.black, 0))
-    table.cell(t, 1, 0, "Score", text_color=color.white, bgcolor=color.new(color.black, 0))
-    table.cell(t, 2, 0, "Exit",  text_color=color.white, bgcolor=color.new(color.black, 0))
-    table.cell(t, 3, 0, "Out",   text_color=color.white, bgcolor=color.new(color.black, 0))
-
-    int n = array.size(logMode)
-
-    for r = 0 to 9
-        int idx = n - 1 - r
-        if idx >= 0
-            table.cell(t, 0, r+1, array.get(logMode, idx))
-            table.cell(t, 1, r+1, str.tostring(array.get(logScore, idx)))
-            table.cell(t, 2, r+1, array.get(logExit, idx))
-            table.cell(t, 3, r+1, str.tostring(array.get(logOut, idx)))
-        else
-            table.cell(t, 0, r+1, "")
-            table.cell(t, 1, r+1, "")
-            table.cell(t, 2, r+1, "")
-            table.cell(t, 3, r+1, "")
