@@ -2,7 +2,7 @@
 
 //@version=6
 // Single source of truth for script title/version (used by strategy() + logs)
-const string STRAT_TITLE = "Regimeline v8.255 — PROFILE BREAKDOWN_DRIFT"
+const string STRAT_TITLE = "Regimeline v8.267 — PROFILE BREAKDOWN_DRIFT"
 
 strategy(STRAT_TITLE,
      overlay=true,
@@ -12,9 +12,7 @@ strategy(STRAT_TITLE,
      default_qty_value=4,
      commission_type=strategy.commission.percent,
      commission_value=0.1,
-     slippage=2,What Claude proposed is:
-
-
+     slippage=2,
      calc_on_every_tick = true,
      process_orders_on_close = false,
      max_labels_count=500)
@@ -437,10 +435,11 @@ int   bdBullInitEarlyMaxImpAge       = 6
 int   bdBullInitEarlyMaxNoNewHi      = 2
 
 // PROFILE_BREAKDOWN_DRIFT-specific containment
-bool  eff_bearDriftNonProofReclaimOn     = true
-float eff_bearDriftNonProofMaxMfePct     = 1.0
-int   eff_bearDriftNonProofMinReclaimRel = 9
-int   eff_bearDriftNonProofMaxReclaimRel = 16
+bool  eff_bearDriftNonProofReclaimOn         = true
+float eff_bearDriftNonProofMaxMfePct         = 1.0
+int   eff_bearDriftNonProofMinReclaimRel     = 9
+int   eff_bearDriftNonProofMaxReclaimRel     = 16
+float eff_bearBDWeakDriftStrongDistEFMin     = 2.40  // tighter than global 2.45; catches borderline extended breakdowns
 
 //====================================================
 // Precompute
@@ -804,6 +803,8 @@ var bool bearTP0Done = false
 var int bearTP0Bar = na 
 var float bearTP0Lo = na 
 var float bearTP0EntryPx = na
+var int   bearTP0EntryBarsIn  = na
+var float bearTP0LimitPrice   = na
 var int bullLastAddBar = na
 var float bullAddRefHi = na   // last add/entry reference high-water mark
 var float bullHH = na
@@ -2398,6 +2399,7 @@ bullAcceptCompression :=
      bullArmed and (not bullPBSeen) and (not bullImpulseDone) and
      (close > bullLevel) and (close[1] > bullLevel) and
      (bodyPct <= bullCompMaxBodyPct) and
+     (bodyPct >= bullMinBodyPct_T) and
      bullCompRangeOk and
      bullCompTightSubtypeOk and
      bullCloseNearHighOk and
@@ -2900,9 +2902,9 @@ bool bearBD_WeakDriftVeto =
       (_bdRangeAtr < bearBD_WeakDrift_RngAtrMax) and
       (_bdDistEF > bearBD_WeakDrift_DistEFMin) and
       (bodyPct < bearBD_WeakDrift_BodyPctMax)) or
-     (bearBD_WeakDriftStrongOn and
+      (bearBD_WeakDriftStrongOn and
       (_bdRangeAtr < bearBD_WeakDriftStrong_RngAtrMax) and
-      (_bdDistEF > bearBD_WeakDriftStrong_DistEFMin) and
+      (_bdDistEF > eff_bearBDWeakDriftStrongDistEFMin) and
       (adx >= bearBD_WeakDriftStrong_AdxMin)) or
      (
       (mode == Mode.RangeB) and
@@ -3773,9 +3775,11 @@ if bearShortEnter
     entryMode := Mode.Wait  // Bear remains overlay; do not force router mode
     bearTP1Done := false 
     bearTP0Done := false 
-    bearTP0Bar := na 
-    bearTP0Lo := na 
-    bearTP0EntryPx := na 
+    bearTP0Bar        := na 
+    bearTP0Lo         := na 
+    bearTP0EntryPx    := na 
+    bearTP0EntryBarsIn := na
+    bearTP0LimitPrice  := na 
    
     // Consume latch
     bearPBSeen := false
@@ -4105,11 +4109,6 @@ bool bullPBLateFailVeto =
      pbHighFail and
      (pbStallCount >= bullPBLateFailMinStallCount)
 
-bool bullPBShallowOldImpulseVeto =
-     (bullPBImpulseAgeBars >= 8) and
-     (bullPBDepthATR < 1.55) and
-     (bullPBAgeBars >= 8)
-
 bool bullPBStallCluster = (pbStallCount >= bullPBStallMinCount) and pbHighFail
 
 // Hard veto (PB only)
@@ -4139,7 +4138,7 @@ bool bullPB_HHProofOk =
 
 
 // Final PB execution gate
-bool bullPBEnterExec = bullPBEnter and bullPBTouchOk and bullPB_HHProofOk and (bullPBScore >= bullPB_MinScore) and (not bullPBStallVeto) and (not bullPBExhaustVeto) and (not bullPBLateVeto) and (not bullPBLifecycleVeto) and (not bullPBLateStallVeto) and (not bullPBAgeVeto) and (not bullPBFreshVeto) and (not bullPBExpAgeVeto) and (not bullPBDirectExpAgeVeto) and (not bullPBExpDepthVeto) and (not bullPBWeakExpWindowVeto) and (not bullPBAcceptHtfOffVeto) and (not bullPBImpulseChaseVeto) and (not bullPBLateFailVeto) and (not bullPBRetryAfterChaseVeto) and (not bullPBEarlyAssumeVeto) and (not bullPBRegimeVeto) and (not bullPBSubtypeVeto) and (not bullPBEarlyHighCloseVeto) and (not bullPBOldImpulseFreshExpVeto) and (not bullPBRecycledDeepFatigueVeto) and (not bullPBShallowOldImpulseVeto)
+bool bullPBEnterExec = bullPBEnter and bullPBTouchOk and bullPB_HHProofOk and (bullPBScore >= bullPB_MinScore) and (not bullPBStallVeto) and (not bullPBExhaustVeto) and (not bullPBLateVeto) and (not bullPBLifecycleVeto) and (not bullPBLateStallVeto) and (not bullPBAgeVeto) and (not bullPBFreshVeto) and (not bullPBExpAgeVeto) and (not bullPBDirectExpAgeVeto) and (not bullPBExpDepthVeto) and (not bullPBWeakExpWindowVeto) and (not bullPBAcceptHtfOffVeto) and (not bullPBImpulseChaseVeto) and (not bullPBLateFailVeto) and (not bullPBRetryAfterChaseVeto) and (not bullPBEarlyAssumeVeto) and (not bullPBRegimeVeto) and (not bullPBSubtypeVeto) and (not bullPBEarlyHighCloseVeto) and (not bullPBOldImpulseFreshExpVeto) and (not bullPBRecycledDeepFatigueVeto)
 
 // --- BULL_INIT_EARLY (PROFILE_BREAKDOWN_DRIFT only) ---
 // Offensive participation path for Breakdown Drift.
@@ -4901,6 +4900,10 @@ if not inPos
 if not inPos 
     bearTP0EntryPx := na
 if not inPos
+    bearTP0EntryBarsIn := na
+if not inPos
+    bearTP0LimitPrice := na
+if not inPos
     bullTP0Done := false
     bullTP0Bar := na
     bullTP0Hi := na
@@ -5043,9 +5046,11 @@ if exitOk and bullTP1Hit
 if exitOk and bearTP0Hit 
     strategy.close("SHORT", qty_percent=bearTP0_Pct, comment="BEAR_TP0") 
     bearTP0Done := true 
-    bearTP0Bar := bar_index 
-    bearTP0Lo := tradeLo 
-    bearTP0EntryPx := posAvg
+    bearTP0Bar         := bar_index
+    bearTP0Lo          := tradeLo
+    bearTP0EntryPx     := posAvg
+    bearTP0EntryBarsIn := not na(lastEntryBar) ? (bar_index - lastEntryBar) : 0
+    bearTP0LimitPrice  := bearTP0Price
     L1_tp0Hit := true
     if na(L1_tp0Bar)
         L1_tp0Bar := bar_index
@@ -5246,13 +5251,32 @@ bool pbFreshNoProofRunnerExit =
 // weak body, and existing no-new-high pressure. Do not allow a weak
 // TP0 to become a full runner failure.
 bool pbWeakTP0QualityRunnerExit =
+     bdBullPB and bullTP0Done and (not bullTP1Done) and
+     (not na(bullTP0Bar)) and (bar_index == bullTP0Bar) and
+     (bar_index > _entryBar) and (not bullCloseInvalid) and
+     (
+         bullTP0WeakQuality
+         or
+         (
+             (not na(bullTP0BarATR)) and (bullTP0BarATR > 0) and
+             ((posAvg - tradeLo) >= bullTP0BarATR * 1.25) and
+             ((tradeHi - posAvg) <= bullTP0BarATR * 0.90) and
+             (bullTP0BarCloseLoc >= 0.80)
+         )
+     )
+
+bool pbRecoveryTP0OnlyRunnerExit =
      bdBullPB and
      bullTP0Done and
-     bullTP0WeakQuality and
      (not bullTP1Done) and
      (not na(bullTP0Bar)) and
+     (not na(bullTP0BarATR)) and
+     (bullTP0BarATR > 0) and
      (bar_index == bullTP0Bar) and
      (bar_index > _entryBar) and
+     ((posAvg - tradeLo) >= bullTP0BarATR * 1.25) and
+     ((tradeHi - posAvg) <= bullTP0BarATR * 0.90) and
+     (bullTP0BarCloseLoc >= 0.80) and
      (not bullCloseInvalid)
 
 float bullPBPostTP0ClosePct =
@@ -5273,7 +5297,7 @@ bool bullPBPostTP0ImmediateCollapse =
 
 bool bdBullInvEarlyDeath=not bullCloseInvalid and bdBullPB and ((not bullTP0Done and not bullPBDelayedProofPending and not bullPBDelayedProofValidated and bullBarsIn>=8 and bullBarsIn<=24 and bullMFE>0 and bullMFE<=atr*.9 and close<=posAvg-atr*.65 and close<emaFast and close<open) or (bullTP0Done and bullBarsIn<=16 and not bullTP1Done and bullNoNewCloseStreak>=5 and close<posAvg and close<emaFast and posAvg-tradeLo>=atr*1.25))
 float rg=math.max(high-low,syminfo.mintick)
-bool pbEPF=bdBullPB and not bullTP0Done and ((bar_index==_entryBar+2 and close<=posAvg*.97 and close<open and ((close-low)/rg)<=.25) or (bar_index==_entryBar+3 and close<=posAvg*.975 and close<open and (high-low)>=atr*.85 and ((close-low)/rg)<=.15 and ((high-low)>=atr*1.2 or close[1]<open[1])) or (bar_index==_entryBar+4 and close<=posAvg*.97 and close<open and (high-low)>=atr*1.2) or (bar_index==_entryBar+6 and close<=posAvg*.985 and close<open and tradeHi>=posAvg+atr*1.5 and ((close-low)/rg)<=.20) or (bar_index==_entryBar+6 and close<=posAvg*.97 and close<open and tradeHi<=posAvg+atr*1.5 and ((close-low)/rg)<=.35) or (bar_index==_entryBar+7 and close<=posAvg*.985 and close<open and tradeHi<=posAvg+atr*1.5 and ((close-low)/rg)<=.25 and close[1]<open[1]) or (bar_index==_entryBar+8 and close<=posAvg*.98 and close<open and tradeHi<=posAvg+atr*1.5)) and not bullCloseInvalid
+bool pbEPF=bdBullPB and not bullTP0Done and ((bar_index==_entryBar+2 and close<=posAvg*.97 and close<open and ((close-low)/rg)<=.25) or (bar_index==_entryBar+3 and close<=posAvg*.975 and close<open and (high-low)>=atr*.85 and ((close-low)/rg)<=.15 and ((high-low)>=atr*1.2 or close[1]<open[1])) or (bar_index==_entryBar+4 and close<=posAvg*.97 and close<open and (high-low)>=atr*1.2) or (bar_index==_entryBar+6 and close<=posAvg*.985 and close<open and tradeHi>=posAvg+atr*1.5 and ((close-low)/rg)<=.20) or (bar_index==_entryBar+6 and close<=posAvg*.97 and close<open and tradeHi<=posAvg+atr*1.5 and ((close-low)/rg)<=.35) or (bar_index==_entryBar+7 and close<=posAvg*.985 and close<open and tradeHi<=posAvg+atr*1.5 and ((close-low)/rg)<=.25 and close[1]<open[1]) or (bar_index==_entryBar+8 and close<=posAvg*.98 and tradeHi<=posAvg+atr*1.5)) and not bullCloseInvalid
 
 
 if bullPBDelayedProofNow and (not bullPBDelayedProofPending) and (not bullPBDelayedProofValidated)
@@ -5384,7 +5408,15 @@ int bearTP0ProofWinBars = 3
 float bearTP0ProofExtPct = 0.30
 float bearTP0AddExtPct = (inPos and posTag=="BEAR" and bearTP0Done and not na(bearTP0Bar) and not na(bearTP0Lo) and not na(bearTP0EntryPx) and bearTP0EntryPx > 0) ? math.max(((bearTP0Lo - low) / bearTP0EntryPx) * 100.0, 0.0) : 0.0
 bool bearTP0ProofDue = inPos and posTag=="BEAR" and bearTP0Done and (not bearTP1Done) and (not na(bearTP0Bar)) and (bar_index >= (bearTP0Bar + bearTP0ProofWinBars))
-bool bearTP0NoExtExit = bearTP0ProofDue and (bearTP0AddExtPct < bearTP0ProofExtPct)
+bool bearTP0QuickMomentumRunner =
+     (not na(bearTP0EntryBarsIn)) and
+     (bearTP0EntryBarsIn >= 2) and (bearTP0EntryBarsIn <= 10) and
+     (not na(bearTP0EntryPx)) and (bearTP0EntryPx > 0) and
+     (not na(bearTP0LimitPrice)) and (bearTP0LimitPrice > 0) and
+     ((bearTP0EntryPx - bearTP0LimitPrice) / bearTP0EntryPx * 100.0 >= 1.5)
+
+bool bearTP0NoExtExit = bearTP0ProofDue and (bearTP0AddExtPct < bearTP0ProofExtPct) and
+     (not bearTP0QuickMomentumRunner)
 
 bearBarsIn = (inPos and posTag=="BEAR" and not na(lastEntryBar)) ? (bar_index - lastEntryBar) : 0
 bearTimeStop = inPos and posTag=="BEAR" and (bearBarsIn >= bearTS_Bars) and (bearMFE < atr * bearTS_MinMFE_ATR)
@@ -5429,6 +5461,21 @@ float bearTP0GotMove  = (inPos and posTag=="BEAR") ? math.max(posAvg - tradeLo, 
 float bearTP0Progress = (inPos and posTag=="BEAR" and not na(bearTP0NeedMove) and bearTP0NeedMove > 0) ? (bearTP0GotMove / bearTP0NeedMove) : na
 
 float bearFavorableExcursion = (inPos and posTag=="BEAR") ? math.max(posAvg - tradeLo, 0.0) : na
+
+bool bearRecoveryTP0RunnerExit =
+     inPos and
+     (posTag == "BEAR") and
+     bearTP0Done and
+     (not bearTP1Done) and
+     (not na(bearTP0Bar)) and
+     (bar_index == bearTP0Bar) and
+     (bar_index > _entryBar) and
+     (bearBarsIn <= 5) and
+     (not na(bearFavorableExcursion)) and
+     (bearFavorableExcursion > 0) and
+     ((tradeHi - posAvg) >= bearFavorableExcursion * 0.95) and
+     (not bearShortInvalid)
+
 bool bearTS_NoMeaningfulExcursion = inPos and posTag=="BEAR" and not na(bearFavorableExcursion) and (bearFavorableExcursion < atr * 0.4)
 
 bool _bearPreTP0Ctx = inPos and posTag=="BEAR" and not bearTP0Done and not na(bearTP0Progress)
@@ -5565,6 +5612,12 @@ if exitOk and inPos
     if (not doExit) and bearInvPostTrail
         doExit := true
         exitReason := "BEAR_TRAIL"
+        exitReg := "BEAR"
+
+    // 3a.45) BEAR recovery-style TP0 runner containment
+    if (not doExit) and bearRecoveryTP0RunnerExit
+        doExit := true
+        exitReason := "BEAR_RECOVERY_TP0_RUNNER"
         exitReg := "BEAR"
 
     // 3a.5) BEAR post-TP0 remainder tightening (post-proof giveback containment)
